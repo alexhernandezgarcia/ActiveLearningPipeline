@@ -7,6 +7,7 @@ import pandas as pd
 from oracles import nupackScore
 from oracle import numbers2letters
 
+
 def add_args(parser):
     """
     Adds command-line arguments to parser
@@ -35,6 +36,7 @@ def add_args(parser):
     )
     return parser
 
+
 ALPHABET_ORIG = {0: "A", 1: "T", 2: "C", 3: "G"}
 ALPHABET_INV_ORACLE = {v: k + 1 for k, v in ALPHABET_ORIG.items()}
 
@@ -49,7 +51,7 @@ def main(args):
         scores_orig = df["scores"].values
         seqs_idx = np.zeros((n_seqs, horizon), dtype=int)
         for idx, seq in enumerate(seqs_letters):
-            seqs_idx[idx, :len(seq)] = [ALPHABET_INV_ORACLE[el] for el in seq]
+            seqs_idx[idx, : len(seq)] = [ALPHABET_INV_ORACLE[el] for el in seq]
     # Read data NPY
     elif args.data_npy:
         data_dict = np.load(args.data_npy, allow_pickle=True).item()
@@ -64,6 +66,7 @@ def main(args):
     # Compute nupack energies by calling the oracle
     scores_new = nupackScore(seqs_idx, returnFunc="energy")
     assert all(np.isclose(scores_orig, scores_new))
+
 
 if __name__ == "__main__":
     parser = ArgumentParser()
