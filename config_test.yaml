@@ -1,4 +1,4 @@
-device : "cpu"
+device : "cuda"
 debug : True
 al:
   n_iter: 3

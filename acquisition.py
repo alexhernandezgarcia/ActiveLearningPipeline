@@ -80,8 +80,8 @@ class AcquisitionFunctionProxy(AcquisitionFunctionBase):
         self.proxy.model.eval()
         with torch.no_grad():
             outputs = self.proxy.model(inputs)
-        return outputs.cpu().detach()
-    
+        return outputs
+
     def get_logits_fidelity(self, inputs_eos_base):
         inputs_all_fidelities = [(input[0], fid) for input in inputs_eos_base for fid in range(self.total_fidelities)]
         # inputs_af = list(map(self.base2af, inputs_all_fidelities))
@@ -109,9 +109,9 @@ class AcquisitionFunctionProxy(AcquisitionFunctionBase):
         # return
         sum_rewards = torch.zeros(
             (len(inputs_af_base,))
-        ).index_add_(0, inputs_indices, outputs)
+        ).to(self.device).index_add_(0, inputs_indices, outputs)
 
-        return sum_rewards.to(self.device)
+        return sum_rewards
 
 
     def base2af(self, state):

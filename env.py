@@ -280,7 +280,7 @@ class EnvAptamers(EnvBase):
 
         inputs_af_base = [self.manip2base(final_state) for final_state in final_states]
 
-        final_rewards = self.acq.get_sum_reward_batch(inputs_af_base).view(len(final_states)).numpy()
+        final_rewards = self.acq.get_sum_reward_batch(inputs_af_base).view(len(final_states)).cpu().detach().numpy()
 
         final_rewards = self.acq2reward(final_rewards)
 
