@@ -154,7 +154,17 @@ class ProxyBase:
             #     self.statistics.log_comet_proxy_training(
             #         self.err_tr_hist, self.err_te_hist
             #     )
+        # dataset = np.load(self.path_data, allow_pickle = True)
+        # dataset = dataset.item()
 
+        # samples = list(map(lambda x: self.base2proxy(x), dataset['samples']))
+        # samples = np.array(samples)
+
+        # tr = data.DataLoader(samples, batch_size=len(samples), shuffle=True, num_workers= 0, pin_memory=False)
+        # for _, trainData in enumerate(tr):
+        #     outputs = self.model(trainData)
+
+        # print(outputs)
 
     @abstractmethod
     def train(self, tr):
@@ -277,12 +287,14 @@ class ProxyMLP(ProxyBase):
         return super().evaluate(data)
   
     def base2proxy(self, state):
+
         #useful format
         self.dict_size = self.config.env.dict_size
-        self.min_len = self.config.env.min_len
         self.max_len = self.config.env.max_len
+        self.total_fidelities = self.config.env.total_fidelities
 
-        seq = state
+        seq = state[0]
+        fid = state[1]
         initial_len = len(seq)
         #into a tensor and then ohe
         seq_tensor = torch.from_numpy(seq)
@@ -302,6 +314,12 @@ class ProxyMLP(ProxyBase):
             ).view(1, -1)
             input_proxy = torch.cat((input_proxy, padding), dim = 1)
         
+        #fid
+        fid_tensor = torch.tensor([fid])
+        fid_tensor = F.one_hot(fid_tensor.long(), num_classes = self.total_fidelities)
+        fid_tensor = fid_tensor.reshape(1, -1).float()
+        
+        input_proxy = torch.cat((input_proxy, fid_tensor), dim = 1)
         return input_proxy.to("cpu")[0] #weird, it always has to be cpu ...
 
 
@@ -401,62 +419,122 @@ class Activation(nn.Module):
     def forward(self, input):
         return self.activation(input)
 
+
 class MLP(nn.Module):
     def __init__(self, config):
-        super().__init__()
+        super(MLP, self).__init__()
         # initialize constants and layers
         self.config = config
+
         act_func = "gelu"
 
         # Architecture
         self.input_max_length = self.config.env.max_len
         self.input_classes = self.config.env.dict_size + 1  # +1 for eos
-        self.filters = 256
-        self.layers = 8
+        self.total_fidelities = self.config.env.total_fidelities
+        self.dropout = self.config.proxy.training.dropout
+
+        self.layers_before_fid = 2
+        self.layers_after_fid = 4
+        self.filters_before_fid = 256
+        self.filters_after_fid = 256
+        self.latents = 200
 
         self.init_layer_depth = int(
             (self.input_classes) * (self.input_max_length + 1)
         )  # +1 for eos token
 
-        # build input layers
+        # build input and output layers
         self.initial_layer = nn.Linear(
-            int(self.init_layer_depth), self.filters) 
+            int(self.init_layer_depth), self.filters_before_fid
+        )  # layer which takes in our sequence in one-hot encoding
         self.initial_activation = Activation(act_func)
-        # output layer
-        self.output_layer = nn.Linear(self.filters, 1, bias=False)
+        # intermediate before id : later : Linear and activation
+        # from intermediate_1 to latent : linear and activation
+        self.towards_latent_layer = nn.Linear(self.filters_before_fid, self.latents)
+        self.towards_latent_activation = Activation(act_func)
+        # from latent to intermediate_2 : no activation ?
+        self.fidelity_layer_depth = self.latents + self.total_fidelities
+        self.from_latent_layer = nn.Linear(
+            self.fidelity_layer_depth, self.filters_after_fid
+        )
+        self.from_latent_activation = Activation(
+            act_func)
+        # final
+        self.output_layer = nn.Linear(self.filters_after_fid, 1, bias=False)
 
         # build hidden layers
-        self.lin_layers = []
-        self.activations= []
-        self.norms = []  
-        self.dropouts= []
+        self.lin_layers_before_fid = []
+        self.activations_before_fid = []
+        self.norms_before_fid = []  # pas pour l'instant
+        self.dropouts_before_fid = []
 
-        for i in range(self.layers):
-            self.lin_layers.append(
-                nn.Linear(self.filters, self.filters)
+        for _ in range(self.layers_before_fid):
+            self.lin_layers_before_fid.append(
+                nn.Linear(self.filters_before_fid, self.filters_before_fid)
             )
-            self.activations.append(
+            self.activations_before_fid.append(
                 Activation(act_func)
             )
-            self.norms.append(nn.BatchNorm1d(self.filters))
-            self.dropouts.append(nn.Dropout(p = self.config.proxy.training.dropout))
+            self.norms_before_fid.append(nn.BatchNorm1d(self.filters_before_fid))
+            self.dropouts_before_fid.append(nn.Dropout(p=self.dropout))
 
         # initialize module lists
-        self.lin_layers = nn.ModuleList(self.lin_layers)
-        self.activations = nn.ModuleList(self.activations)
-        self.norms = nn.ModuleList(self.norms)
-        self.dropouts = nn.ModuleList(self.dropouts)
+        self.lin_layers_before_fid = nn.ModuleList(self.lin_layers_before_fid)
+        self.activations_before_fid = nn.ModuleList(self.activations_before_fid)
+        self.norms_before_fid = nn.ModuleList(self.norms_before_fid)
+        self.dropouts_before_fid = nn.ModuleList(self.dropouts_before_fid)
 
-     
+        self.lin_layers_after_fid = []
+        self.activations_after_fid = []
+        self.norms_after_fid = []
+        self.dropouts_after_fid = []
+
+        for _ in range(self.layers_after_fid):
+            self.lin_layers_after_fid.append(
+                nn.Linear(self.filters_after_fid, self.filters_after_fid)
+            )
+            self.activations_after_fid.append(
+                Activation(act_func)
+            )
+            self.norms_after_fid.append(nn.BatchNorm1d(self.filters_after_fid))
+            self.dropouts_after_fid.append(nn.Dropout(p=self.dropout))
+
+        # initialize module lists
+        self.lin_layers_after_fid = nn.ModuleList(self.lin_layers_after_fid)
+        self.activations_after_fid = nn.ModuleList(self.activations_after_fid)
+        self.norms_after_fid = nn.ModuleList(self.norms_after_fid)
+        self.dropouts_after_fid = nn.ModuleList(self.dropouts_after_fid)
+
     def forward(self, x):
+        x_seq = x[:, : -self.total_fidelities]
+        x_fid = x[:, self.init_layer_depth :]  # +1 non convention python
 
-        x= self.initial_activation(self.initial_layer(x))
-        for i in range(self.layers):
-            x = self.lin_layers[i](x)
-            x = self.activations[i](x)
-            x = self.dropouts[i](x)
-            x = self.norms[i](x)
+        # BEFORE FID
+        x_before_fid = self.initial_activation(self.initial_layer(x_seq))
+        
+        for i in range(self.layers_before_fid):
+            x_before_fid = self.lin_layers_before_fid[i](x_before_fid)
+            x_before_fid = self.activations_before_fid[i](x_before_fid)
+            x_before_fid = self.dropouts_before_fid[i](x_before_fid)
+            x_before_fid = self.norms_before_fid[i](x_before_fid)
 
-        y = self.output_layer(x)
+        # TO LATENT
+        x_latent = self.towards_latent_layer(x_before_fid)
+        x_latent = self.towards_latent_activation(x_latent)
+
+        # ADDING FID
+        x_after_fid = torch.cat((x_latent, x_fid), dim=1)
+        x_after_fid = self.from_latent_layer(x_after_fid)
+        x_after_fid = self.from_latent_activation(x_after_fid)
+
+        # AFTERFID
+        for i in range(self.layers_after_fid):
+            x_after_fid = self.lin_layers_after_fid[i](x_after_fid)
+            x_after_fid = self.activations_after_fid[i](x_after_fid)
+            x_after_fid = self.dropouts_after_fid[i](x_after_fid)
+            x_after_fid = self.norms_after_fid[i](x_after_fid)
+
+        y = self.output_layer(x_after_fid)
 
         return y

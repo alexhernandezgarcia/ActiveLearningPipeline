@@ -19,7 +19,7 @@ ENV WRAPPER
 class Env:
     def __init__(self, config, acq):
         self.config = config
-        self.acq = acq
+        self.acq = acq.acq
 
         self.init_env()
     
@@ -108,6 +108,7 @@ class EnvAptamers(EnvBase):
         self.max_word_len = self.config.env.max_word_len
         self.min_word_len = self.config.env.min_word_len
         self.n_alphabet = self.config.env.dict_size
+        self.total_fidelities = self.config.env.total_fidelities
 
         self.action_space = self.get_action_space()
         self.token_eos = self.get_token_eos(self.action_space)
@@ -123,11 +124,16 @@ class EnvAptamers(EnvBase):
     
     def init_env(self, idx=0):
         super().init_env(idx)
-        self.state = np.array([])
+        self.seq = np.array([])
+        self.fid = None
         self.n_actions_taken = 0
         self.done = False
+        self.eos = False
         self.id = idx
         self.last_action = None
+    
+    def get_state(self):
+        return (self.seq, self.fid)
 
     def get_action_space(self):
         super().get_action_space()
@@ -150,7 +156,10 @@ class EnvAptamers(EnvBase):
         if self.done : 
             return [0 for _ in mask]
         
-        seq_len = len(self.state)
+        if self.eos and not(self.done):
+            return [0 for _ in mask]
+        
+        seq_len = len(self.seq)
 
         if seq_len < self.min_seq_len:
             mask[self.token_eos] = 0
@@ -167,21 +176,34 @@ class EnvAptamers(EnvBase):
         super().get_parents(backward)
 
         if self.done:
-            if self.state[-1] == self.token_eos:
-                parents_a = [self.token_eos]
-                parents = [self.state[:-1]]
+            if (self.eos == False) and (self.fid is not None) and (self.seq[-1] == self.token_eos):
+                parents_a = [self.fid]
+                parents = [(self.seq, None)]
                 if backward:
+                    #fid and seq updated in backward_sample():
                     self.done = False
+                    self.eos = True
+                return parents, parents_a
+
+            else:
+                raise TypeError("Not good ending of sequence")
+
+        elif self.eos:
+            if (self.seq[-1] == self.token_eos) and self.done == False and (self.fid is None):
+                parents_a = [self.token_eos]
+                parents = [(self.seq[:-1], None)]
+                if backward:
+                    self.eos = False
                 return parents, parents_a 
             else:
-                raise NameError
+                raise TypeError("not good last eos action")
         
         else:
             parents = []
             actions = []
             for idx, a in enumerate(self.action_space):
-                if self.state[-len(a): ] == list(a):
-                    parents.append((self.state[:-len(a)]))
+                if self.seq[-len(a): ] == list(a):
+                    parents.append((self.seq[:-len(a)], None))
                     actions.append(idx)
             
             return parents, actions
@@ -189,32 +211,58 @@ class EnvAptamers(EnvBase):
     def step(self, action):
         super().step(action)
         valid = False
-        seq = self.state
+        seq = self.seq
         seq_len = len(seq)
+
+        if self.eos:
+            if not(self.done) and (action[0] in range(self.total_fidelities)):
+                if seq_len - 1 >= self.min_seq_len and seq_len - 1 <= self.max_seq_len: #-1 for the eos action
+        
+                    valid = True
+                    next_seq = seq
+                    next_fid = action[0]
+                    self.eos = False
+                    self.done = True
+                    self.seq = next_seq
+                    self.fid = next_fid
+                    self.n_actions_taken += 1
+                    self.last_action = action[0]
+                    return next_seq, action, valid
+                else:
+                    raise TypeError("constrain min/max len")
+            else:
+                raise TypeError("problem eos / done")
        
-        if (action == [self.token_eos]) and (self.done == False):
+        elif (action == [self.token_eos]) and (self.done == False) and (self.eos == False):
             if seq_len >= self.min_seq_len and seq_len <= self.max_seq_len:
                 valid = True
                 next_seq = np.append(seq, action)
-                self.done = True
+                next_fid = None
+                self.eos = True
                 self.n_actions_taken += 1
-                self.state = next_seq
+                self.seq = next_seq
+                self.fid = next_fid
                 self.last_action = self.token_eos
-
                 return next_seq, action, valid
+            else:
+                raise TypeError("action eos and done and eos state pb")
         
-        if self.done == True:
-            valid = False
-            return None, None, valid
+
         
-        elif self.done == False and not(action == [self.token_eos]):
+        elif self.eos == False and not(action == [self.token_eos]):
             if action in list(map(list, self.action_space)) and seq_len <= self.max_seq_len:
                 valid = True
                 next_seq = np.append(seq, action)
+                next_fid = None
                 self.n_actions_taken += 1
-                self.state = next_seq
-                self.last_action = action
+                self.seq = next_seq
+                self.fid = next_fid
+                self.last_action = action[0]
                 return next_seq, action, valid
+        
+        elif self.done == True:
+            valid = False
+            return None, None, valid
         
         else:
             raise TypeError("invalid action to take")
@@ -222,33 +270,43 @@ class EnvAptamers(EnvBase):
     def acq2reward(self, acq_values):
         min_reward = 1e-10
         true_reward = np.clip(acq_values, min_reward, None)
-        customed_af = lambda x: x**3 #to favor the higher rewards in a more spiky way, can be customed
+        customed_af = lambda x: x #to favor the higher rewards in a more spiky way, can be customed
         exponentiate = np.vectorize(customed_af)
         return exponentiate(true_reward)
 
-    def get_reward(self, states, done):
-        rewards = np.zeros(len(done), dtype = float)
-        final_states = [s for s, d in zip(states, done) if d]
+    def get_reward(self, states, eos):
+        rewards = np.zeros(len(eos), dtype = float)
+        final_states = [s for s, e in zip(states, eos) if e]
+
         inputs_af_base = [self.manip2base(final_state) for final_state in final_states]
-        
-        final_rewards = self.acq.get_reward(inputs_af_base).view(len(final_states)).numpy()
+
+        final_rewards = self.acq.get_sum_reward_batch(inputs_af_base).view(len(final_states)).numpy()
+
         final_rewards = self.acq2reward(final_rewards)
 
-        done = np.array(done)
+        eos = np.array(eos)
         
-        rewards[done] = final_rewards
+        rewards[eos] = final_rewards
+
         return rewards
+    
+    def get_logits_fidelity(self, states):
+        inputs_base = [self.manip2base(state_eos) for state_eos in states]
+        logits = self.acq.get_logits_fidelity(inputs_base)
+        return logits
         
     def base2manip(self, state):
-        seq_base = state
+        seq_base = state[0]
+        fid = state[1]
         seq_manip = np.concatenate((seq_base, [self.token_eos]))
-        return seq_manip
+        return (seq_manip, fid)
     
     def manip2base(self, state):
-        seq_manip = state
+        seq_manip = state[0]
+        fid = state[1]
         if seq_manip[-1] == self.token_eos:
             seq_base = seq_manip[:-1]
-            return seq_base
+            return (seq_base, fid)
         else:
             raise TypeError
 

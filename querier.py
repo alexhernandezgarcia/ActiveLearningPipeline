@@ -12,7 +12,7 @@ class Querier:
         '''
         calls gflownet.sample() through sampleForQuery and then do post processing on it
         '''
-        queries = self.sample4query()
+        queries = self.sample4query() #as a list of tuples [(seq, fid)]
         queries = self.enhance_queries(queries)
         queries = self.construct_query(queries)
         return queries

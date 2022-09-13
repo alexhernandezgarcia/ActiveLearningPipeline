@@ -1,7 +1,7 @@
 device : "cpu"
 debug : True
 al:
-  n_iter: 10
+  n_iter: 3
   queries_per_it: 100
 
 path :
@@ -13,10 +13,11 @@ path :
 env:
   main : "aptamers"
   dict_size : 4
-  min_len : 4
-  max_len : 4
+  min_len : 30
+  max_len : 40
   min_word_len : 1
   max_word_len : 1
+  total_fidelities : 3
 
 oracle:
   main : "toy"
@@ -49,7 +50,7 @@ gflownet:
   training:
     pct_batch_empirical : 0.1
     batch_size : 16
-    training_steps : 1000
+    training_steps : 10
     clip_grad_norm : 10
     dropout: 0.1
     opt : "adam"

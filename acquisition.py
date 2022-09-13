@@ -19,9 +19,10 @@ class AcquisitionFunction:
         else:
             raise NotImplementedError
     
-    def get_reward(self, inputs_af_base):
-        outputs = self.acq.get_reward_batch(inputs_af_base)
-        return  outputs
+    # def get_reward(self, inputs_af_base):
+    #     outputs = self.acq.get_reward_batch(inputs_af_base)
+    #     return  outputs
+    
     
 
 '''
@@ -36,6 +37,7 @@ class AcquisitionFunctionBase:
         self.config = config
         self.proxy = proxy
         self.device = self.config.device
+        self.total_fidelities = self.config.env.total_fidelities
         
         #the specific class of the exact AF is instantiated here
     @abstractmethod
@@ -73,23 +75,54 @@ class AcquisitionFunctionProxy(AcquisitionFunctionBase):
 
         inputs_af = list(map(self.base2af, inputs_af_base))
         inputs = torch.stack(inputs_af).view(len(inputs_af_base), -1)
-    
+
         self.load_best_proxy()
         self.proxy.model.eval()
         with torch.no_grad():
             outputs = self.proxy.model(inputs)
         return outputs.cpu().detach()
-
-
     
+    def get_logits_fidelity(self, inputs_eos_base):
+        inputs_all_fidelities = [(input[0], fid) for input in inputs_eos_base for fid in range(self.total_fidelities)]
+        # inputs_af = list(map(self.base2af, inputs_all_fidelities))
+        # inputs_af = torch.stack(inputs_af).view(len(inputs_eos_base) * self.total_fidelities, -1)
+       
+        outputs = self.get_reward_batch(inputs_all_fidelities)
+
+        return outputs.view(len(inputs_eos_base), self.total_fidelities)
+
+    def get_sum_reward_batch(self, inputs_af_base):
+        inputs_indices = torch.LongTensor(
+            sum([[i] * self.total_fidelities for i in range(len(inputs_af_base))], [])
+        ).to(self.device)
+        inputs_base_all_fidelities = [(input[0], fid) for input in inputs_af_base for fid in range(self.total_fidelities)]
+        
+        # inputs_af_all_fidelities = list(map(self.base2af, inputs_base_all_fidelities))
+        # inputs_af_all_fidelities = torch.stack(inputs_af_all_fidelities).view(len(inputs_af_base) * self.total_fidelities, -1)
+    
+        outputs = self.get_reward_batch(inputs_base_all_fidelities).view(len(inputs_base_all_fidelities))
+        # print(outputs)
+        # print(inputs_indices)
+        # print(torch.zeros(
+        #     (len(inputs_af_base,))
+        # ))
+        # return
+        sum_rewards = torch.zeros(
+            (len(inputs_af_base,))
+        ).index_add_(0, inputs_indices, outputs)
+
+        return sum_rewards.to(self.device)
+
+
     def base2af(self, state):
         #useful format
         self.dict_size = self.config.env.dict_size
         self.min_len = self.config.env.min_len
         self.max_len = self.config.env.max_len
 
-        seq = state
+        seq = state[0]
         initial_len = len(seq)
+        fid = state[1]
         #into a tensor and then ohe
         seq_tensor = torch.from_numpy(seq)
         seq_ohe = F.one_hot(seq_tensor.long(), num_classes = self.dict_size +1)
@@ -99,16 +132,22 @@ class AcquisitionFunctionProxy(AcquisitionFunctionBase):
         eos_ohe = F.one_hot(eos_tensor.long(), num_classes=self.dict_size + 1)
         eos_ohe = eos_ohe.reshape(1, -1).float()
 
-        input_proxy = torch.cat((seq_ohe, eos_ohe), dim = 1)
+        input_af = torch.cat((seq_ohe, eos_ohe), dim = 1)
         #adding 0-padding
         number_pads = self.max_len - initial_len
         if number_pads:
             padding = torch.cat(
                 [torch.tensor([0] * (self.dict_size +1))] * number_pads
             ).view(1, -1)
-            input_proxy = torch.cat((input_proxy, padding), dim = 1)
+            input_af = torch.cat((input_af, padding), dim = 1)
         
-        return input_proxy.to(self.device)[0]
+        fid_tensor = torch.tensor([fid])
+        fid_tensor = F.one_hot(fid_tensor.long(), num_classes = self.total_fidelities)
+        fid_tensor = fid_tensor.reshape(1, -1).float()
+        
+        input_af = torch.cat((input_af, fid_tensor), dim = 1)
+
+        return input_af.to(self.device)[0]
     
 
 

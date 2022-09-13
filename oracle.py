@@ -1,5 +1,5 @@
 import numpy as np
-
+import pandas as pd
 #for transition functions base2oracle, specific to each oracle
 import torch
 from torch import nn
@@ -42,7 +42,7 @@ class Oracle:
         data = {}
         data["samples"] = samples
         data["energies"] = self.score(samples)
-
+        #print("data initialized", data)
 
         if save:
             np.save(self.path_data, data)
@@ -108,9 +108,9 @@ class OracleMLP(OracleBase):
         self.max_len_mlp = 40 #this MLP was trained with seqs of len max 40
         self.path_oracle_mlp = self.config.path.model_oracle_MLP
         self.device = torch.device(self.config.device)
+        self.total_fidelities = self.config.env.total_fidelities
     
     def initialize_samples_base(self):
-    
         self.min_len = self.config.env.min_len
         self.max_len = self.config.env.max_len
         self.init_len = self.config.oracle.init_dataset.init_len
@@ -126,10 +126,14 @@ class OracleMLP(OracleBase):
         np.random.shuffle(samples)
         samples = samples[:self.init_len]
 
-        return samples
+        full_samples = []
+        for molecule in samples:
+            full_samples += [[molecule, np.random.randint(0, self.total_fidelities)]]
+
+        return full_samples
 
     def base2oracle(self, state):
-        seq_array = state
+        seq_array, fidelity = state[0], state[1]
         initial_len = len(seq_array)
         #transform the array as a tensor
         seq_tensor = torch.from_numpy(seq_array)
@@ -148,7 +152,7 @@ class OracleMLP(OracleBase):
             padding = torch.cat([torch.tensor([0] * (self.dict_size + 1))] * number_pads).view(1, -1)
             oracle_input = torch.cat((oracle_input, padding), dim = 1)
         
-        return oracle_input.to(self.device)[0]
+        return (oracle_input.to(self.device)[0], fidelity)
 
     def get_score(self, queries):
         '''
@@ -156,29 +160,49 @@ class OracleMLP(OracleBase):
         Outputs : list of floats=energies
         '''
         #list of tensors in ohe format
-        list4oracle =  list(map(self.base2oracle, queries))
-        #turn this into a single big tensor to call the MLP once
-        tensor4oracle = torch.stack(list4oracle).view(len(queries), -1)
+        list_queries =  list(map(self.base2oracle, queries))
+        # #turn this into a single big tensor to call the MLP once
+        # tensor4oracle = torch.stack(list4oracle).view(len(queries), -1)
+        df_queries = pd.DataFrame(list_queries, columns = ["seq_oracle", "fidelity"])
+        df_energies = np.zeros(len(df_queries.index))
 
-        #load the MLP oracle
-        self.model = MLP()
-        if os.path.exists(self.path_oracle_mlp):
-            checkpoint = torch.load(self.path_oracle_mlp)
+        for fidelity in range(0, self.total_fidelities):
+            #we filter the queries per fidelity to call a specific MLP on each
+            indexes = df_queries.index[df_queries["fidelity"] == fidelity].tolist()
+            sub_samples = df_queries["seq_oracle"][indexes].reset_index(drop = True).tolist()
+            
+            
+            #load self.model MLP - fidelity
+            self.load_MLP(fidelity)
+
+            
+            #format the sub_samples and call the self.model
+            inputs_model = torch.stack(sub_samples).view(len(sub_samples), -1)
+            sub_energies = self.model(inputs_model)
+
+            for i, index in enumerate(indexes):
+                df_energies[index] = sub_energies[i]
+        
+        return df_energies.tolist()
+
+    def load_MLP(self, fidelity):
+        file_path = self.path_oracle_mlp + "_" + str(fidelity)
+        
+        if os.path.exists(file_path):
+            self.model = MLP(fidelity)
+            checkpoint = torch.load(file_path)
             self.model.load_state_dict(checkpoint["model_state_dict"])
             self.model.to(self.device)
+            self.model.eval()
+
         else:
-            print("The MLP oracle could not be loaded")
             raise NotImplementedError
-            
-        self.model.eval()
-        outputs = self.model(tensor4oracle)
-    
-        return outputs.squeeze(1).tolist()
 
 
 class OracleToy(OracleBase):
     def __init__(self, config):
         super().__init__(config)
+        self.total_fidelities = config.env.total_fidelities
     
     def initialize_samples_base(self):
         self.dict_size = self.config.env.dict_size
@@ -198,21 +222,41 @@ class OracleToy(OracleBase):
         np.random.shuffle(samples)
         samples = samples[:self.init_len]
 
-        return samples
+        full_samples = []
+        for molecule in samples:
+            full_samples += [[molecule, np.random.randint(0, self.total_fidelities)]]
+
+        return full_samples
 
     def base2oracle(self, state):
         '''
-        Input : array = seq
-        Output : array = seq
+        Input : seq, fid
+        Output : seq, fid
         '''
-        seq = state
-        return seq
+
+        return state
 
     def get_score(self, queries):
-        count_zero = lambda x : float(np.count_nonzero(x == 0))
-        outputs = list(map(count_zero, queries))
-        return outputs
+        dico_std = {
+            0: 1,
+            1 : 0.5,
+            2 : 0,
+        }
+        
+        def toy_function(state):
+            seq = state[0]
+            fid = state[1]
+            mean = float(np.count_nonzero(seq == 0))
+            std = dico_std[int(fid)]
+            result = np.random.normal(mean, std)
+            if result < 0:
+                return 0
+            else:
+                return result
+        
+        return list(map(toy_function, queries))
 
+        
 
 
 ### Diverse Models of Oracle for now
@@ -235,14 +279,13 @@ class Activation(nn.Module):
 
 #This MLP was specifically trained on a special dataset
 class MLP(nn.Module):
-    def __init__(self):
+    def __init__(self, fidelity):
         super().__init__()
 
-        self.layers = 2
-        self.filters = 128
+        self.init_architecture_params(fidelity)
         self.init_layer_depth = int(
-            (40 + 1) * (4 + 1)
-        )  
+                (40 + 1) * (4 + 1)
+            ) 
 
         # build input and output layers
         self.initial_layer = nn.Linear(
@@ -265,6 +308,23 @@ class MLP(nn.Module):
         self.lin_layers = nn.ModuleList(self.lin_layers)
         self.activations = nn.ModuleList(self.activations)
         self.dropouts = nn.ModuleList(self.dropouts)
+
+    def init_architecture_params(self, fidelity):
+
+        if fidelity == 0:
+            self.layers = 2
+            self.filters = 128
+        
+        elif fidelity == 1:
+            self.layers = 2 
+            self.filters = 256
+        
+        elif fidelity == 2:
+            self.layers = 4
+            self.filters = 256
+ 
+        else:
+            raise NotImplementedError
 
     def forward(self, x):
 

@@ -47,12 +47,12 @@ class ActiveLearning:
 
     
     def iterate(self):
-        self.proxy.train()
+        #self.proxy.train()
         
         self.gflownet.train()
         
         queries = self.querier.build_query()
-        print(queries)
+        #print(queries)
         energies = self.oracle.score(queries)
         self.oracle.update_dataset(queries, energies)
     
