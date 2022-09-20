@@ -28,7 +28,7 @@ class ActiveLearning:
 
         #load the main components of the AL pipeline
         self.oracle = Oracle(self.config)
-        self.proxy = Proxy(self.config, self.logger)
+        self.proxy = Proxy(self.config, self.oracle, self.logger) #self.oracle transmits the function oracle2proxy (opposite value for aptamers)
         self.acq = AcquisitionFunction(self.config, self.proxy)
         self.env = Env(self.config, self.acq)
         self.gflownet = GFlowNet(self.config, self.logger, self.env)

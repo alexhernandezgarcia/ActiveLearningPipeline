@@ -63,7 +63,7 @@ gflownet:
     ttsr : 3
 
 acquisition:
-  main: "proxy"
+  main: "MES"
   
 
   

@@ -39,6 +39,8 @@ class Oracle:
             self.oracle = OracleNupack(self.config)
         else:
             raise NotImplementedError
+        
+        self.oracle2proxy = self.oracle.oracle2proxy
 
     def initialize_dataset(self, save = True, return_data = False):
         #the method to initialize samples in the BASE format is specific to each oracle for now. It can be changed.
@@ -50,7 +52,7 @@ class Oracle:
         data["samples"] = samples
         data["energies"] = self.score(samples)
 
-
+        #print("iniail data", data)
         if save:
             np.save(self.path_data, data)
         if return_data:
@@ -102,6 +104,9 @@ class OracleBase:
         '''
         pass
 
+    @abstractmethod
+    def oracle2proxy(self, oracle_value):
+        pass
 
 '''
 Different Oracles Implemented
@@ -204,6 +209,9 @@ class OracleMLP(OracleBase):
 
         else:
             raise NotImplementedError
+    
+    def oracle2proxy(self, oracle_value):
+        return oracle_value
 
 
 class OracleToy(OracleBase):
@@ -235,6 +243,7 @@ class OracleToy(OracleBase):
 
         return full_samples
 
+
     def base2oracle(self, state):
         '''
         Input : seq, fid
@@ -262,6 +271,9 @@ class OracleToy(OracleBase):
                 return result
         
         return list(map(toy_function, queries))
+
+    def oracle2proxy(self, oracle_value):
+        return oracle_value
 
 
 class OracleNupack(OracleBase):
@@ -352,7 +364,7 @@ class OracleNupack(OracleBase):
         results = complex_analysis(set, model=model1, compute=['mfe'])
         
         for i in range(len(energies)):
-            energies[i] = - results[comps[i]].mfe[0].energy
+            energies[i] = results[comps[i]].mfe[0].energy
             #ssStrings[i] = str(results[comps[i]].mfe[0].structure)
 
         dict_return = {}
@@ -434,13 +446,16 @@ class OracleNupack(OracleBase):
                 mean = energies[i]
                 std = dico_std[int(fidelities[i])]
                 result = np.random.normal(mean, std)
-                if result < 0:
+                if result > 0:
                     result = 0
                 noisy_energies.append(result)
 
             return noisy_energies
 
         return apply_noise(energies, fidelities)
+
+    def oracle2proxy(self, oracle_value):
+        return - oracle_value
 
   
 

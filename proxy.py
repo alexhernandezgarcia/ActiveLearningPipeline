@@ -14,9 +14,10 @@ from abc import abstractmethod
 GLOBAL CLASS PROXY WRAPPER, callable with key methods
 '''
 class Proxy:
-    def __init__(self, config, logger):
+    def __init__(self, config, oracle, logger):
         self.config = config
         self.logger = logger
+        self.oracle2proxy = oracle.oracle2proxy
         self.init_proxy()
 
     def init_proxy(self):
@@ -26,7 +27,7 @@ class Proxy:
             raise NotImplementedError
     
     def train(self):
-        self.data_handler = BuildDataset(self.config, self.proxy)
+        self.data_handler = BuildDataset(self.config, self.proxy, oracle2proxy = self.oracle2proxy)
         self.proxy.converge(self.data_handler)
         return
 
@@ -249,6 +250,8 @@ class ProxyBase:
     @abstractmethod
     def base2proxy(self, state):
         pass
+    
+
 
 '''
 In the child Classes, the previous abstract methods can be overwritten. In what follows, the minimum is done to precise the proxy, ie
@@ -330,12 +333,14 @@ class BuildDataset:
     '''
     Will load the dataset scored by the oracle and convert it in the right format for the proxy with transition.base2proxy
     '''
-    def __init__(self, config, proxy):
+    def __init__(self, config, proxy, oracle2proxy):
         self.config = config
         self.proxy = proxy
         self.path_data = self.config.path.data_oracle
         self.shuffle_data = self.config.proxy.data.shuffle
         self.seed_data = self.config.proxy.data.seed
+        
+        self.oracle2proxy = oracle2proxy
 
         self.load_dataset()
     
@@ -345,7 +350,10 @@ class BuildDataset:
         dataset = dataset.item()
 
         #Targets of training
-        self.targets = np.array(dataset["energies"])
+    
+        targets = list(map(self.oracle2proxy, dataset["energies"]))
+        self.targets = np.array(targets)
+
 
         #Samples of training
         samples = list(map(self.proxy.base2proxy, dataset["samples"]))
