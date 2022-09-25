@@ -20,7 +20,7 @@ env:
   total_fidelities : 3
 
 oracle:
-  main : "nupack"
+  main : "mlp"
   init_dataset:
     seed : 0
     init_len : 100

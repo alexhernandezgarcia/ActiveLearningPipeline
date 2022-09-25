@@ -184,8 +184,8 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
         candidates = list(map(self.base2af, samples))
         #turn into single tensor
         candidates = torch.stack(candidates)
-        candidates = candidates.view(len(samples), -1)
-        print("on a les candidats", candidates.size())
+        candidates = candidates.view(len(samples), 1, -1)
+
         return candidates
     
     def make_cost_utility(self):
@@ -197,7 +197,6 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
 
         #create the model
         model = self.make_botorch_model()
-        print("NUM" outputs, model.num_outputs)
         #make candidate set
         candidates = self.make_candidate_set()
         #we have the project method
@@ -206,14 +205,15 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
         cost_utility = self.make_cost_utility()
         #transform inputs_af_base into good format
         inputs_af = list(map(self.base2af, inputs_af_base))
-        print("on a tout pour lancer")
+        inputs_af = torch.stack(inputs_af).view(len(inputs_af_base),1, -1)
+
         MES = qMultiFidelityMaxValueEntropy(
             model = model, 
             candidate_set = candidates, 
             cost_aware_utility = cost_utility,
             project = projection
             )
-
+   
         acq_values = MES(inputs_af)
         
         return acq_values
@@ -299,18 +299,21 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
     def project_max_fidelity(self, tensor_af):
         #tensor in af format and then put them to max fidelity for the proxy
         #useful format
-
+        
+        nb_inputs = len(tensor_af)
         #isolate the non_fidelity part
-        input_without_fid = tensor_af[:-self.total_fidelities]
-
+        tensor_af = tensor_af.view(nb_inputs, -1)
+        inputs_without_fid = tensor_af[:, :-self.total_fidelities]
+       
+    
         #get ohe representations of the highest fidelity
         max_fid = torch.tensor([self.total_fidelities - 1]) #convention : 0 to total_fidelities - 1
         max_fid = F.one_hot(max_fid.long(), num_classes = self.total_fidelities)
         max_fid = max_fid.reshape(1, -1).float()
-        
-        input_max_fid = torch.cat((input_af, max_fid), dim = 1)
 
-        return input_max_fid.to(self.device)[0]
+        max_fids = max_fid.repeat(nb_inputs, 1)
+        input_max_fid = torch.cat((inputs_without_fid, max_fids), dim = 1) 
+        return input_max_fid.to(self.device).view(nb_inputs, 1, -1)#[0]
 
 
 
@@ -324,7 +327,7 @@ class ProxyBotorch(Model):
         self.proxy = proxy
         self.nb_samples = 20
     
-    def posterior(self, X):
+    def posterior(self, X, observation_noise = False, posterior_transform = None):
         super().posterior(X)
 
         #for each element X, compute several proxy values (with dropout), to deduce the mean and std
@@ -332,25 +335,59 @@ class ProxyBotorch(Model):
             self.proxy.load_model(self.config.path.model_proxy)
         else:
             raise FileNotFoundError
+        original_shape = X.shape
+        nb_queries = original_shape[0]
+
+        if X.dim() == 4:
+            nb_queries = nb_queries * X.shape[2]
+            X = X.unsqueeze(2)
+            
+        X = X.view(nb_queries, -1)
 
         self.proxy.model.train(mode = True)
         with torch.no_grad():
             outputs = torch.hstack([self.proxy.model(X) for _ in range(self.nb_samples)]).cpu().detach().numpy()
             mean = np.mean(outputs, axis = 1)
-            std = np.stf(outputs, axis = 1)
+            std = np.std(outputs, axis = 1)
         
         #build the matrix std
-        covar = np.diag(std)
+        # print("original shape", original_shape)
+        #print("mean originai shap", original_shape,  torch.reshape(torch.from_numpy(mean), tuple(original_shape[:-1])))
+        # print("std originai shap", torch.reshape(torch.from_numpy(std), tuple(original_shape[:-1])))
+        # mean = torch.reshape(torch.from_numpy(mean), tuple(original_shape[:-1]))
+        # covar = torch.reshape(torch.from_numpy(std), tuple(original_shape[:-1]))
+        #print("covar matrice original shape", np.diag())
+        mean = torch.from_numpy(mean).unsqueeze(0)
+        covar = torch.from_numpy(np.diag(std))
         
         #return a Gypotorch Multivariate object
-        return MultivariateNormal(mean = mean, covar = covar)
+        
+        # print("posterior created with mean", mean)
+        # print("posterior created with variance", covar)
+
+        posterior = MultivariateNormal(mean = mean, covariance_matrix = covar)
+
+     
+        posterior.mvn = posterior
+        posterior.device = self.config.device
+        posterior.dtype = mean.dtype
+
+        return posterior
     
+    @property
     def batch_shape(self):
         #not sure about this, read the docs x Moksh
-        return torch.Size()
+        #self.batch_shape = torch.Size()
+        #cls_name = self.__class__.__name__
+        return torch.Size([])
     
+    @property
     def num_outputs(self):
+        #self.num_outputs = 1
+        #cls_name = self.__class__.__name__
         return 1
+    
+
     
 
 
