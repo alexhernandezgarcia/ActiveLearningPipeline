@@ -515,8 +515,8 @@ class MLP(nn.Module):
         self.dropouts_after_fid = nn.ModuleList(self.dropouts_after_fid)
 
     def forward(self, x):
-        x_seq = x[:, : -self.total_fidelities]
-        x_fid = x[:, self.init_layer_depth :]  # +1 non convention python
+        x_seq = x[..., : -self.total_fidelities]
+        x_fid = x[..., self.init_layer_depth :]  # +1 non convention python
 
         # BEFORE FID
         x_before_fid = self.initial_activation(self.initial_layer(x_seq))
@@ -525,14 +525,14 @@ class MLP(nn.Module):
             x_before_fid = self.lin_layers_before_fid[i](x_before_fid)
             x_before_fid = self.activations_before_fid[i](x_before_fid)
             x_before_fid = self.dropouts_before_fid[i](x_before_fid)
-            x_before_fid = self.norms_before_fid[i](x_before_fid)
+            #x_before_fid = self.norms_before_fid[i](x_before_fid)
 
         # TO LATENT
         x_latent = self.towards_latent_layer(x_before_fid)
         x_latent = self.towards_latent_activation(x_latent)
 
         # ADDING FID
-        x_after_fid = torch.cat((x_latent, x_fid), dim=1)
+        x_after_fid = torch.cat((x_latent, x_fid), dim=-1)
         x_after_fid = self.from_latent_layer(x_after_fid)
         x_after_fid = self.from_latent_activation(x_after_fid)
 
@@ -541,7 +541,7 @@ class MLP(nn.Module):
             x_after_fid = self.lin_layers_after_fid[i](x_after_fid)
             x_after_fid = self.activations_after_fid[i](x_after_fid)
             x_after_fid = self.dropouts_after_fid[i](x_after_fid)
-            x_after_fid = self.norms_after_fid[i](x_after_fid)
+            #x_after_fid = self.norms_after_fid[i](x_after_fid)
 
         y = self.output_layer(x_after_fid)
 

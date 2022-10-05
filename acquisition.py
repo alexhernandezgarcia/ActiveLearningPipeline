@@ -10,7 +10,7 @@ from botorch.posteriors.posterior import Posterior
 from botorch.acquisition.cost_aware import CostAwareUtility 
 from botorch.models.cost import AffineFidelityCostModel
 from gpytorch.distributions import MultivariateNormal
-
+from botorch.posteriors.gpytorch import GPyTorchPosterior
 
 '''
 ACQUISITION WRAPPER
@@ -329,48 +329,35 @@ class ProxyBotorch(Model):
     
     def posterior(self, X, observation_noise = False, posterior_transform = None):
         super().posterior(X)
-
         #for each element X, compute several proxy values (with dropout), to deduce the mean and std
         if os.path.exists(self.config.path.model_proxy):
             self.proxy.load_model(self.config.path.model_proxy)
         else:
             raise FileNotFoundError
-        original_shape = X.shape
-        nb_queries = original_shape[0]
-
-        if X.dim() == 4:
-            nb_queries = nb_queries * X.shape[2]
-            X = X.unsqueeze(2)
-            
-        X = X.view(nb_queries, -1)
-
+        dim_input = X.dim()       
         self.proxy.model.train(mode = True)
         with torch.no_grad():
             outputs = torch.hstack([self.proxy.model(X) for _ in range(self.nb_samples)]).cpu().detach().numpy()
-            mean = np.mean(outputs, axis = 1)
-            std = np.std(outputs, axis = 1)
-        
-        #build the matrix std
-        # print("original shape", original_shape)
-        #print("mean originai shap", original_shape,  torch.reshape(torch.from_numpy(mean), tuple(original_shape[:-1])))
-        # print("std originai shap", torch.reshape(torch.from_numpy(std), tuple(original_shape[:-1])))
-        # mean = torch.reshape(torch.from_numpy(mean), tuple(original_shape[:-1]))
-        # covar = torch.reshape(torch.from_numpy(std), tuple(original_shape[:-1]))
-        #print("covar matrice original shape", np.diag())
-        mean = torch.from_numpy(mean).unsqueeze(0)
-        covar = torch.from_numpy(np.diag(std))
-        
-        #return a Gypotorch Multivariate object
-        
-        # print("posterior created with mean", mean)
-        # print("posterior created with variance", covar)
+            mean_1 = np.mean(outputs, axis = 1) 
+            std_1 = np.std(outputs, axis = 1) 
 
-        posterior = MultivariateNormal(mean = mean, covariance_matrix = covar)
+        #For the mean
+        mean = torch.from_numpy(mean_1)
+        #For the variance
+        list_std = torch.from_numpy(std_1)
+        nb_inputs = list_std.shape[0]
+        nb_cofid = list_std.shape[1]
+        list_covar = [torch.diag(list_std[i, ...].view(nb_cofid)) for i in range(nb_inputs)]
+        covar= torch.stack(list_covar, 0)
 
-     
-        posterior.mvn = posterior
-        posterior.device = self.config.device
-        posterior.dtype = mean.dtype
+        if dim_input == 3:
+            mean = mean.unsqueeze(1)
+            covar = covar.unsqueeze(1)   
+        if dim_input == 4:
+            mean = mean.view(mean.shape[0], mean.shape[2], mean.shape[1])
+            covar = covar.unsqueeze(1)        
+        mvn = MultivariateNormal(mean = mean, covariance_matrix = covar)
+        posterior = GPyTorchPosterior(mvn)
 
         return posterior
     
@@ -386,8 +373,6 @@ class ProxyBotorch(Model):
         #self.num_outputs = 1
         #cls_name = self.__class__.__name__
         return 1
-    
-
     
 
 
