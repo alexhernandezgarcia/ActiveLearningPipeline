@@ -10,10 +10,10 @@ import os
 #for mother class of Oracle
 from abc import abstractmethod
 
-'''
-GLOBAL CLASS PROXY WRAPPER, callable with key methods
-'''
 class Proxy:
+    '''
+    GLOBAL CLASS PROXY WRAPPER, callable with key methods
+    '''
     def __init__(self, config, oracle, logger):
         self.config = config
         self.logger = logger

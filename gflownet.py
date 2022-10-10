@@ -22,10 +22,11 @@ to = lambda x : x.to(_dev[0])
 def set_device(dev):
     _dev[0] = dev
 
-'''
-GFlownet Wrapper, callable with key methods
-'''
+
 class GFlowNet:
+    '''
+    GFlownet Wrapper, callable with key methods
+    '''
     def __init__(self, config, logger, env):
         self.config = config
         self.logger = logger
@@ -34,10 +35,9 @@ class GFlowNet:
         self.init_gflownet()
     
     def init_gflownet(self):
-        #for now there is only one GFlowNet - configuration called A, but there will be several with multifidelity (several possibilities of sampling m)
+        #for now there is only one GFlowNet, that should be reduced
         self.gflownet = GFlowNet_A(self.config, self.logger, self.env)
-        
-    
+         
     def train(self):
         self.gflownet.train()
     
@@ -46,22 +46,22 @@ class GFlowNet:
         return queries
         
         
-'''
-GFlowNet Objects
-'''
 class GFlowNetBase:
+    '''
+    Base class of GFlowNet
+    '''
+    @abstractmethod
     def __init__(self, config, logger, env, load_best_model = False):
         self.config = config
         self.logger = logger
         self.env = env
-
         self.device = self.config.device
+
         set_device(self.device)
- 
-        #set loss function, device, buffer ...
+        #Path where the GFN model is stored
         self.path_model = self.config.path.model_gfn
 
-
+        #Loss functions
         if self.config.gflownet.loss.function == "flowmatch":
             self.loss_function = self.flowmatch_loss
         elif self.config.gflownet.loss.function == "trajectory_balance":
@@ -69,17 +69,22 @@ class GFlowNetBase:
         else:
             raise NotImplementedError  
 
+        #the model_class / model ... of the gfn policy network can vary
         self.model_class = NotImplemented
+        self.manip2policy = NotImplemented
         self.model = NotImplemented
         self.best_model = NotImplemented
         self.sampling_model = NotImplemented
-        self.get_model_class()
+        self.get_model_class() #precised with the different options of gfn network in the config
         if load_best_model:
             self.make_model(best_model=True)
 
         self.load_hyperparameters()
 
+        #useful for masking impossible actions
         self.loginf = tf_list([1e6])
+
+        #to have access to data
         self.buffer = Buffer(self.config)
             
     @abstractmethod
@@ -94,7 +99,6 @@ class GFlowNetBase:
         self.batch_size = self.config.gflownet.training.batch_size
         self.ttsr = self.config.gflownet.training.ttsr
         self.clip_grad_norm = self.config.gflownet.training.clip_grad_norm
-
 
     @abstractmethod
     def get_model_class(self):
@@ -176,7 +180,7 @@ class GFlowNetBase:
                             state[k] = v.cuda()   
 
             self.best_lr_scheduler = make_lr_scheduler(self.best_opt, self.config)  
-
+            self.manip2policy = self.model.manip2policy
 
     @abstractmethod
     def forward_sample(self, envs, policy, temperature = 0):
@@ -219,8 +223,7 @@ class GFlowNetBase:
                 action_logits = self.sampling_model(states_ohe)
             action_logits /= temperature
         elif policy == "uniform":
-            action_logits = tf_list(np.ones((len(states), len(self.env.action_space) + 1))) #actions + eos
-        
+            action_logits = tf_list(np.ones((len(states), len(self.env.action_space["all_action"])))) #actions + eos + fid       
         elif policy == "mixt":
             random_probas = [self.rng.uniform() for _ in range(len(envs))]
             envs_random = [env for i, env in enumerate(envs) if random_probas[i] <= self.random_action_prob]
@@ -232,7 +235,7 @@ class GFlowNetBase:
                 # print(type(valids_random))
 
             else:
-                envs_random, actions_random, valids_random = [], to(torch.tensor([])), ()
+                envs_random, actions_random, valids_random = [], to(torch.tensor([])), []
 
             if envs_no_random:
                 envs_no_random, actions_no_random, valids_no_random = self.forward_sample(envs_no_random, policy = "model", temperature=self.temperature)
@@ -240,7 +243,8 @@ class GFlowNetBase:
                 # print(valids_no_random)
                 
             else:
-                envs_no_random, actions_no_random, valids_no_random = [], to(torch.tensor([])), ()
+                envs_no_random, actions_no_random, valids_no_random = [], to(torch.tensor([])), []
+
             final_envs = envs_random + envs_no_random
             final_actions = torch.cat((actions_random, actions_no_random), dim = 0)
             final_valids = valids_random + valids_no_random
@@ -252,15 +256,17 @@ class GFlowNetBase:
         
         
         action_logits = torch.where(masks == 1, action_logits, - self.loginf)
+
         if all(torch.isfinite(action_logits).flatten()):
             actions = Categorical(logits=action_logits).sample()
+          
         else:
             raise ValueError("Action could not be sampled from model!")
         
         assert len(envs) == actions.shape[0]
-  
+
         # Execute actions
-        _, _, valids = zip(*[env.step([action.tolist()]) for env, action in zip(envs, actions)])
+        valids = [env.step(action.item()) for env, action in zip(envs, actions)] #zip(*)
         
         return envs, actions, valids
 
@@ -270,7 +276,7 @@ class GFlowNetBase:
         if temperature == 0:
             temperature = self.config.gflownet.sampling.temperature
 
-        parents, parents_a = env.get_parents(backward = True) #remplacer state par seq
+        parents, parents_a = env.get_parents() #remplacer state par seq
 
         parents_ohe = torch.stack(list(map(self.manip2policy, parents))).view(len(parents), -1)
 
@@ -280,7 +286,7 @@ class GFlowNetBase:
                 action_logits = self.best_model(parents_ohe)[
                     torch.arange(len(parents)), parents_a
                 ]
-
+                
             if all(torch.isfinite(action_logits).flatten()):
                 action_idx = Categorical(logits=action_logits).sample().item()
          
@@ -296,6 +302,8 @@ class GFlowNetBase:
         env.seq = state[0] #state ou fonction set state
         env.fid = state[1]
         env.last_action = parents_a[action_idx]
+        env.update_status()
+        env.n_actions_taken = max(0, env.n_actions_taken - 1)
 
         return env, parents, parents_a
 
@@ -325,7 +333,6 @@ class GFlowNetBase:
 
         self.make_model(new_model=True, best_model=True)
         self.model.train()
-
         for it in tqdm(range(self.training_steps), disable = not self.view_progress):
 
             data = self.get_training_data(self.batch_size)
@@ -375,7 +382,7 @@ class GFlowNetBase:
             for env in envs:
                 if env.done:
                     batch.append(
-                            self.env.manip2base(env.state)
+                            self.env.manip2base(env.get_state())
                         )
                 else:
                     remaining_envs.append(env)
@@ -383,9 +390,6 @@ class GFlowNetBase:
         
         return batch
 
-    @abstractmethod
-    def manip2policy(self, state):
-        pass
 
 
 ###-----------SUBCLASS OF SPECIFIC GFLOWNET-----------------------
@@ -413,52 +417,6 @@ class GFlowNet_A(GFlowNetBase):
     def backward_sample(self, env, policy = "model", temperature = 0):
         return super().backward_sample(env, policy, temperature)
 
-
-    def forward_sample_eos(self, envs, temperature = 0):
-        """
-        Performs a forward action on each environment of a list.
-
-        Args
-        ----
-        env : list of GFlowNetEnv or derived
-            A list of instances of the environment
-
-        times : dict
-            Dictionary to store times
-
-        policy : string
-            - model: uses self.model to obtain the sampling probabilities.
-            - uniform: samples uniformly from the action space.
-
-        model : torch model
-            Model to use as policy if policy="model"
-
-        temperature : float
-            Temperature to adjust the logits by logits /= temperature
-        """
-        if temperature == 0:
-            temperature = self.temperature
-        
-        assert all(env.eos for env in envs) and all(env.seq[-1] == env.token_eos for env in envs)
-
-        states = [env.get_state() for env in envs]
-
-        #call method of env that calls method of acquisition
-        fidelity_logits = self.env.get_logits_fidelity(states)
-
-
-        if all(torch.isfinite(fidelity_logits).flatten()):
-            fidelities = Categorical(logits=fidelity_logits).sample()
-  
-        else:
-            raise ValueError("Fidelity could not be sampled from model!")
-        
-        assert len(envs) == fidelities.shape[0]
-  
-        # Execute actions
-        _, _, valids = zip(*[env.step([fidelity.tolist()]) for env, fidelity in zip(envs, fidelities)])
-        
-        return envs, fidelities, valids
     
     def get_training_data(self, batch_size):
         super().get_training_data(batch_size)
@@ -481,32 +439,34 @@ class GFlowNet_A(GFlowNetBase):
             env.eos = False
             env.seq = state_manip[0]
             env.fid = state_manip[1]
-            env.last_action = env.fid
+            env.n_actions_taken = len(env.seq) + 1 #all aptamers + eos + fidelity action
+            #env.last_action = env.fid
             #we don't use last_action_taken
 
 
-
-            while len(env.seq) > 0:
+            while len(env.seq) > 0 or (env.fid != None):
                 previous_state = env.get_state()
                 previous_eos = env.eos
                 previous_done = env.done
                 previous_mask = env.get_mask()
-                
+
                 env, parents, parents_a = self.backward_sample(
                         env,
                         policy="model",
                         temperature=self.temperature
                     )
+
                 #for backward sampling, the last action is updated after
                 previous_action = env.last_action 
+
                 seq_ohe = self.manip2policy(previous_state)
                 parents_ohe = torch.stack(
                     list(map(self.manip2policy, parents))
                     )
-                
+   
                 batch.append(
                     [
-                        seq_ohe.unsqueeze(0),
+                        seq_ohe.unsqueeze(0), #tensor([[]])
                         tl_list([previous_action]),
                         tf_list([previous_mask]),
                         previous_state,
@@ -515,19 +475,13 @@ class GFlowNet_A(GFlowNetBase):
                         previous_eos,
                         previous_done,
                         tl_list([env.id]*len(parents)),
-                        tl_list(
-                            [
-                                len(previous_state[0]) - 1 if not previous_done
-                                else len(previous_state[0])
-                            ]
-                        )
+                        tl_list([env.n_actions_taken])
                     ]
                 )
 
-
-                # print(              
-                #     [
-                #         seq_ohe.unsqueeze(0),
+                # print(
+                #         [
+                #         seq_ohe.unsqueeze(0), #tensor([[]])
                 #         tl_list([previous_action]),
                 #         tf_list([previous_mask]),
                 #         previous_state,
@@ -536,63 +490,38 @@ class GFlowNet_A(GFlowNetBase):
                 #         previous_eos,
                 #         previous_done,
                 #         tl_list([env.id]*len(parents)),
-                #         tl_list(
-                #             [
-                #                 len(previous_state) - 1 if not previous_done
-                #                 else len(previous_state)
-                #             ]
-                #         )
+                #         tl_list([env.n_actions_taken])
                 #     ]
                 # )
-
             env.done = True
 
-        
+
         envs = [env for env in envs if not env.done]
         self.sampling_model = self.best_model
         self.sampling_model.eval()
         
         while envs:
-            envs_eos = [env for env in envs if env.eos]
-            envs_no_eos = [env for env in envs if not(env.eos)]
-            #default : 
-            #ENVS NO EOS : CLASSIC
-            if len(envs_no_eos):
-                envs_no_eos, actions_no_eos, valids_no_eos = self.forward_sample(
-                        envs_no_eos,
-                        policy="mixt",
-                        temperature=self.temperature
-                    )
-            else:
-                envs_no_eos, actions_no_eos, valids_no_eos = [], to(torch.tensor([])), ()
+            
+            envs, actions, valids = self.forward_sample(
+                envs,
+                policy = "mixt",
+                temperature = self.temperature
+            )
 
-    
-            #ENVS EOS : 
-            if len(envs_eos):
-
-                envs_eos, actions_eos, valids_eos = self.forward_sample_eos(
-                        envs_eos,
-                        temperature=self.temperature
-                    )
-            else:
-                envs_eos, actions_eos, valids_eos = [], to(torch.tensor([])), ()
-
-
-            envs = envs_no_eos + envs_eos
-            actions = torch.cat((actions_no_eos, actions_eos), dim = 0)
-            valids = valids_no_eos + valids_eos
 
             # Add to batch
+
             for env, action, valid in zip(envs, actions, valids):
                 if valid:
                     parents, parents_a = env.get_parents()
+
                     state_ohe = self.manip2policy(env.get_state())
                     parents_ohe = torch.stack(list(map(self.manip2policy, parents)))
                     mask = env.get_mask()
                     batch.append(
                             [
                                 state_ohe.unsqueeze(0),
-                                tl_list([int(action)]), #don't know why it is a scalar sometime ...
+                                tl_list([int(action.item())]), #don't know why it is a scalar sometime ...
                                 tf_list([mask]),
                                 env.get_state(),
                                 parents_ohe.view(len(parents), -1),
@@ -603,12 +532,10 @@ class GFlowNet_A(GFlowNetBase):
                                 tl_list([env.n_actions_taken - 1]), #convention, we start at 0
                             ]
                         )
-            
-
                     # print(
                     #         [
                     #             state_ohe.unsqueeze(0),
-                    #             tl_list([int(action)]),
+                    #             tl_list([int(action.item())]), #don't know why it is a scalar sometime ...
                     #             tf_list([mask]),
                     #             env.get_state(),
                     #             parents_ohe.view(len(parents), -1),
@@ -616,12 +543,11 @@ class GFlowNet_A(GFlowNetBase):
                     #             env.eos,
                     #             env.done,
                     #             tl_list([env.id] * len(parents)),
-                    #             tl_list([env.n_actions_taken - 1]),
+                    #             tl_list([env.n_actions_taken - 1]), #convention, we start at 0
                     #         ]
                     # )
-
-
-                    
+            
+    
             envs = [env for env in envs if not env.done]
 
         
@@ -640,13 +566,14 @@ class GFlowNet_A(GFlowNetBase):
         
 
 
-        rewards = self.env.get_reward(input_reward, eos)
+        rewards = self.env.get_reward(input_reward, done)
 
 
-        rewards = [tl_list([r]) for r in rewards]
+        rewards = [tf_list([r]) for r in rewards]
+        
+        
         eos = [tl_list([e]) for e in eos]
         done = [tl_list([d]) for d in done]
-       
 
         batch = list(
             zip(
@@ -664,6 +591,7 @@ class GFlowNet_A(GFlowNetBase):
         )
 
         return batch
+
 
     def flowmatch_loss(self, data):
         super().flowmatch_loss(data)
@@ -684,7 +612,7 @@ class GFlowNet_A(GFlowNetBase):
 
         #IN FLOW
         q_in = self.model(parents)[torch.arange(parents.shape[0]), actions]
-        parents_Qsa = q_in * (1 - done) - self.loginf*done
+        parents_Qsa = q_in
 
         in_flow = torch.log(self.flowmatch_eps + to(torch.zeros((seqs.shape[0],))).index_add_(0, parents_incoming_flow_idxs, torch.exp(parents_Qsa)))
 
@@ -696,10 +624,9 @@ class GFlowNet_A(GFlowNetBase):
         # )
         #OUTFLOW
         q_out = self.model(seqs)
-        q_out = torch.where(masks ==1, q_out, -self.loginf)
+        q_out = torch.where(masks == 1, q_out, -self.loginf)
         q_out = torch.logsumexp(q_out, 1)
-        q_out = q_out * (1 - done) - self.loginf * done
-        child_Qsa = q_out * (1 - eos) - self.loginf*eos
+        child_Qsa = q_out * (1 - done) - self.loginf * done
 
         out_flow = torch.log(self.flowmatch_eps + rewards + torch.exp(child_Qsa))
         
@@ -709,79 +636,17 @@ class GFlowNet_A(GFlowNetBase):
         print("loss gfn", loss.item())
         return loss
     
+
     def train(self):
         super().train()
 
     
     def sample_queries(self, nb_queries):
-        print("we sample for query !")
-        self.make_model(best_model=True)
-        self.sampling_model = self.best_model
-
-        batch = []
-        envs = [self.env.create_new_env(idx = idx) for idx in range(nb_queries)]
-
-        while envs:
-            envs_eos = [env for env in envs if env.eos]
-            envs_no_eos = [env for env in envs if not(env.eos)]
-            #default : 
-            #ENVS NO EOS : CLASSIC
-            if len(envs_no_eos):
-                envs_no_eos, actions_no_eos, valids_no_eos = self.forward_sample(
-                        envs_no_eos,
-                        policy="mixt",
-                        temperature=self.temperature
-                    )
-            else:
-                envs_no_eos, actions_no_eos, valids_no_eos = [], to(torch.tensor([])), ()
-
+        return super().sample_queries(nb_queries)
     
-            #ENVS EOS : 
-            if len(envs_eos):
-
-                envs_eos, actions_eos, valids_eos = self.forward_sample_eos(
-                        envs_eos,
-                        temperature=self.temperature
-                    )
-            else:
-                envs_eos, actions_eos, valids_eos = [], to(torch.tensor([])), ()
+ 
 
 
-            envs = envs_no_eos + envs_eos
-            # actions = torch.cat((actions_no_eos, actions_eos), dim = 0)
-            # valids = valids_no_eos + valids_eos
-                
-            remaining_envs = []
-            for env in envs:
-                if env.done:
-                    batch.append(
-                            self.env.manip2base(env.get_state())
-                        )
-                else:
-                    remaining_envs.append(env)
-            envs = remaining_envs
-        
-        return batch
-                
-
-
-    def manip2policy(self, state):
-        seq_manip = state[0]
-        fid = state[1]
-        initial_len = len(seq_manip)
-
-        seq_tensor = torch.from_numpy(seq_manip)
-        seq_ohe =  F.one_hot(seq_tensor.long(), num_classes=self.env.n_alphabet+1)
-        input_policy = seq_ohe.reshape(1, -1).float()
-
-        number_pads = (self.env.max_seq_len + 1 - initial_len)
-        if number_pads:
-            padding =  torch.cat(
-                [torch.tensor([0] * (self.env.n_alphabet + 1))] * number_pads
-            ).view(1, -1)
-            input_policy = torch.cat((input_policy, padding), dim = 1)
-        
-        return to(input_policy)[0]
 
 
 
@@ -847,8 +712,6 @@ class Buffer:
 Model Zoo
 '''
 
-
-
 class Activation(nn.Module):
     def __init__(self, activation_func):
         super().__init__()
@@ -863,57 +726,155 @@ class Activation(nn.Module):
 
 class MLP(nn.Module):
     def __init__(self, config):
-        super().__init__()
-     
+        super(MLP, self).__init__()
+        # initialize constants and layers
         self.config = config
+
         act_func = "relu"
 
         # Architecture
-        self.input_max_length = self.config.env.max_len + 1  
-        self.input_classes = self.config.env.dict_size + 1  
-        self.init_layer_size = int(self.input_max_length * self.input_classes)
-        self.final_layer_size = int(self.input_classes)  
+        self.input_max_length = self.config.env.max_len
+        self.input_classes = self.config.env.dict_size + 1  # +1 for eos
+        self.total_fidelities = self.config.env.total_fidelities
+        self.dropout = self.config.proxy.training.dropout
 
-        self.filters = 256
-        self.layers = 16
+        self.layers_before_fid = 4
+        self.layers_after_fid = 8
+        self.filters_before_fid = 256
+        self.filters_after_fid = 256
+        self.latents = 253
 
-        prob_dropout = self.config.gflownet.training.dropout
+        self.init_layer_depth = int(
+            (self.input_classes) * (self.input_max_length + 1)
+        )  # +1 for eos token
 
         # build input and output layers
         self.initial_layer = nn.Linear(
-            self.init_layer_size, self.filters
-        )  
+            int(self.init_layer_depth), self.filters_before_fid
+        )  # layer which takes in our sequence in one-hot encoding
         self.initial_activation = Activation(act_func)
-        self.output_layer = nn.Linear(
-            self.filters, self.final_layer_size, bias=False
-        )  
+        # intermediate before id : later : Linear and activation
+        # from intermediate_1 to latent : linear and activation
+        self.towards_latent_layer = nn.Linear(self.filters_before_fid, self.latents)
+        self.towards_latent_activation = Activation(act_func)
+        # from latent to intermediate_2 : no activation ?
+        self.fidelity_layer_depth = self.latents + self.total_fidelities
+        self.from_latent_layer = nn.Linear(
+            self.fidelity_layer_depth, self.filters_after_fid
+        )
+        self.from_latent_activation = Activation(
+            act_func)
+        # final
+        self.output_size = self.config.env.dict_size + 1 + self.total_fidelities
+        self.output_layer = nn.Linear(self.filters_after_fid, self.output_size, bias=False)
 
         # build hidden layers
-        self.lin_layers = []
-        self.activations = []
-        # self.norms = []
-        self.dropouts = []
+        self.lin_layers_before_fid = []
+        self.activations_before_fid = []
+        #self.norms_before_fid = []  # pas pour l'instant
+        self.dropouts_before_fid = []
 
-        for _ in range(self.layers):
-            self.lin_layers.append(nn.Linear(self.filters, self.filters))
-            self.activations.append(Activation(act_func))
-            # self.norms.append(nn.BatchNorm1d(self.filters))#et pas self.filters
-            self.dropouts.append(nn.Dropout(p=prob_dropout))
+        for _ in range(self.layers_before_fid):
+            self.lin_layers_before_fid.append(
+                nn.Linear(self.filters_before_fid, self.filters_before_fid)
+            )
+            self.activations_before_fid.append(
+                Activation(act_func)
+            )
+            #self.norms_before_fid.append(nn.BatchNorm1d(self.filters_before_fid))
+            self.dropouts_before_fid.append(nn.Dropout(p=self.dropout))
 
         # initialize module lists
-        self.lin_layers = nn.ModuleList(self.lin_layers)
-        self.activations = nn.ModuleList(self.activations)
-        # self.norms = nn.ModuleList(self.norms)
-        self.dropouts = nn.ModuleList(self.dropouts)
-        return
+        self.lin_layers_before_fid = nn.ModuleList(self.lin_layers_before_fid)
+        self.activations_before_fid = nn.ModuleList(self.activations_before_fid)
+        #self.norms_before_fid = nn.ModuleList(self.norms_before_fid)
+        self.dropouts_before_fid = nn.ModuleList(self.dropouts_before_fid)
+
+        self.lin_layers_after_fid = []
+        self.activations_after_fid = []
+        #self.norms_after_fid = []
+        self.dropouts_after_fid = []
+
+        for _ in range(self.layers_after_fid):
+            self.lin_layers_after_fid.append(
+                nn.Linear(self.filters_after_fid, self.filters_after_fid)
+            )
+            self.activations_after_fid.append(
+                Activation(act_func)
+            )
+            #self.norms_after_fid.append(nn.BatchNorm1d(self.filters_after_fid))
+            self.dropouts_after_fid.append(nn.Dropout(p=self.dropout))
+
+        # initialize module lists
+        self.lin_layers_after_fid = nn.ModuleList(self.lin_layers_after_fid)
+        self.activations_after_fid = nn.ModuleList(self.activations_after_fid)
+        #self.norms_after_fid = nn.ModuleList(self.norms_after_fid)
+        self.dropouts_after_fid = nn.ModuleList(self.dropouts_after_fid)
 
     def forward(self, x):
-        x = self.initial_activation(
-            self.initial_layer(x)
-        )  
-        for i in range(self.layers):
-            x = self.lin_layers[i](x)
-            x = self.activations[i](x)
-            x = self.dropouts[i](x)
-            # seq = self.norms[i](seq)
-        return self.output_layer(x)
+        x_seq = x[..., : -self.total_fidelities]
+        x_fid = x[..., self.init_layer_depth :]  # +1 non convention python
+
+        # BEFORE FID
+        x_before_fid = self.initial_activation(self.initial_layer(x_seq))
+        
+        for i in range(self.layers_before_fid):
+            x_before_fid = self.lin_layers_before_fid[i](x_before_fid)
+            x_before_fid = self.activations_before_fid[i](x_before_fid)
+            x_before_fid = self.dropouts_before_fid[i](x_before_fid)
+            #x_before_fid = self.norms_before_fid[i](x_before_fid)
+
+        # TO LATENT
+        x_latent = self.towards_latent_layer(x_before_fid)
+        x_latent = self.towards_latent_activation(x_latent)
+
+        # ADDING FID
+        x_after_fid = torch.cat((x_latent, x_fid), dim=-1)
+        x_after_fid = self.from_latent_layer(x_after_fid)
+        x_after_fid = self.from_latent_activation(x_after_fid)
+
+        # AFTERFID
+        for i in range(self.layers_after_fid):
+            x_after_fid = self.lin_layers_after_fid[i](x_after_fid)
+            x_after_fid = self.activations_after_fid[i](x_after_fid)
+            x_after_fid = self.dropouts_after_fid[i](x_after_fid)
+            #x_after_fid = self.norms_after_fid[i](x_after_fid)
+
+        y = self.output_layer(x_after_fid)
+
+        return y
+    
+    def manip2policy(self, state):
+        #useful format
+        self.dict_size = self.config.env.dict_size
+        self.max_len = self.config.env.max_len
+        self.total_fidelities = self.config.env.total_fidelities
+
+        seq_manip = state[0]
+        fid = state[1]
+        initial_len = len(seq_manip)
+
+        #into a tensor and then ohe
+        seq_tensor = torch.from_numpy(seq_manip)
+        seq_tensor = F.one_hot(seq_tensor.long(), num_classes = self.dict_size +1)
+        input_policy = seq_tensor.reshape(1, -1).float()
+
+        #adding 0-padding
+        number_pads = self.max_len + 1 - initial_len #the eos action if already added if necessary at the end
+        if number_pads:
+            padding = torch.cat(
+                [torch.tensor([0] * (self.dict_size +1))] * number_pads
+            ).view(1, -1)
+            input_policy = torch.cat((input_policy, padding), dim = 1)
+
+        if fid == None:
+            fid_tensor = torch.tensor([[0] * self.total_fidelities])
+        else:
+            fid_tensor = torch.tensor([fid])
+            fid_tensor = F.one_hot(fid_tensor.long(), num_classes = self.total_fidelities)
+            fid_tensor = fid_tensor.reshape(1, -1).float()
+        
+        input_policy= torch.cat((input_policy, fid_tensor), dim = 1)
+        
+        return to(input_policy)[0]
+

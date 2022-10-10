@@ -35,7 +35,7 @@ class ActiveLearning:
         self.querier = Querier(self.config, self.gflownet)
     
     def run_pipeline(self):
-
+ 
         self.iter = None
 
         #we initialize the first dataset
@@ -48,9 +48,9 @@ class ActiveLearning:
     
     def iterate(self):
         self.proxy.train()
-        
+     
         self.gflownet.train()
-        
+
         queries = self.querier.build_query()
         print(queries)
         energies = self.oracle.score(queries)

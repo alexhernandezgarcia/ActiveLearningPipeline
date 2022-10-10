@@ -1,45 +1,32 @@
-import torch
-import torch.nn.functional as F
-from torch.utils import data
-from torch import nn, optim, cuda, backends
-from sklearn.utils import shuffle
-from tqdm import tqdm
 import numpy as np
 import itertools
-#to check path
-import os
 #for mother class of Oracle
 from abc import abstractmethod
 
-
-'''
-ENV WRAPPER
-'''
-
 class Env:
+    '''
+    Env wrapper class that initializes the specific environment precised in the config
+    '''
     def __init__(self, config, acq):
         self.config = config
         self.acq = acq.acq
-
         self.init_env()
     
     def init_env(self):
-        if self.config.env.main == "aptamers":
+        if self.config.env.main == "aptamers": #the only environment currently implemented
             self.env = EnvAptamers(self.config, self.acq)
         else:
             raise NotImplementedError
     
-'''
-Generic Env Base Class
-'''
 
 class EnvBase:
+    '''
+    Base class from which all the environments derive
+    '''
     def __init__(self, config, acq):
         self.config = config
         self.acq = acq
-
         self.device = self.config.device
-
 
     @abstractmethod
     def create_new_env(self, idx):
@@ -51,70 +38,61 @@ class EnvBase:
 
     @abstractmethod
     def get_action_space(self):
-        '''
-        get all possible actions to get the parents
-        '''
         pass
  
     @abstractmethod
     def get_mask(self):
-        '''
-        for sampling in GFlownet and masking in the loss function
-        '''
         pass
     
     @abstractmethod
     def get_parents(self, backward = False):
-        '''
-        to build the training batch (for the inflows)
-        '''
         pass
     
     @abstractmethod
     def step(self,action):
-        '''
-        for forward sampling
-        '''
         pass
     
     @abstractmethod
     def acq2rewards(self, acq_values):
-        '''
-        correction of the value of the AF for positive reward (or to scale it)
-        '''
-
         pass
     
     @abstractmethod
     def get_reward(self, states, done):
-        '''
-        get the reward values of a batch of candidates
-        '''
         pass
 
 
-'''
-Specific Envs
-'''
-
 class EnvAptamers(EnvBase):
+    '''
+    Environment for DNA Aptamers
+    0 : A, 1 : C, 2 : T, 4 : G
+    5 : EOS
+    6 and more : the different discrete fidelities.
+    Can be adapted for more complex actions (AA, AT, CG)
+    '''
     def __init__(self, config, acq) -> None:
         super().__init__(config, acq)
 
-        self.device = self.config.device
-
+        #Specifig to DNA sequences
         self.max_seq_len = self.config.env.max_len
         self.min_seq_len = self.config.env.min_len
         self.max_word_len = self.config.env.max_word_len
         self.min_word_len = self.config.env.min_word_len
         self.n_alphabet = self.config.env.dict_size
+
+        #Fidelities
         self.total_fidelities = self.config.env.total_fidelities
 
-        self.action_space = self.get_action_space()
-        self.token_eos = self.get_token_eos(self.action_space)
+        #Using the conventions to number the actions
+        self.action_space = self.get_action_space() #dictionnary with keys : "dna_action", "eos_action", "fidelity_action"
+        self.last_dna_action = self.action_space['dna_action'][-1][0] #from 0 to last_dna_action : DNA Actions
+        self.eos_token = self.action_space['eos_action'][0][0] #End of sequence action = Last DNA action_id + 1
+        self.first_fidelity_action = self.action_space['fidelity_action'][0][0] #First fidelity action = Eos action + 1
+
+        #Utils to convert the fidelities to actions (0, the worst fidelity corresponds to 0 + self.first_fidelity_action in terms of action number)
+        self.fid_action2state = lambda x : x - self.first_fidelity_action
+        self.fid_state2action = lambda x : x + self.first_fidelity_action
 
         self.env_class = EnvAptamers
-
         self.init_env()
    
     def create_new_env(self, idx):
@@ -134,139 +112,209 @@ class EnvAptamers(EnvBase):
     
     def get_state(self):
         return (self.seq, self.fid)
-
+    
     def get_action_space(self):
-        super().get_action_space()
+        '''
+        Makes the link between the number of the action (ie integer index in the list dico_actions["all_action"]) and the actual action [A] or [Eos]
+        NB : action eos identifies with its integer index by construction. Whereas action of index 0 could be [00] ie [AA] in some settings.
+        '''
+        dico_actions = {}
+
+        #DNA ACTIONS
         valid_wordlens = np.arange(self.min_word_len, self.max_word_len +1)
         alphabet = [a for a in range(self.n_alphabet)]
-        actions = []
+        dna_actions = []
         for r in valid_wordlens:
-            actions_r = [el for el in itertools.product(alphabet, repeat = r)]
-            actions += actions_r
-        return actions
+            actions_r = [list(el) for el in itertools.product(alphabet, repeat = r)]
+            dna_actions += actions_r
+        dico_actions["dna_action"] = dna_actions
 
-    def get_token_eos(self, action_space):
-        return len(action_space)
+        #EOS ACTIONS
+        eos_action = len(dna_actions)
+        dico_actions["eos_action"] = [[eos_action]]
+
+        #FIDELITY ACTIONS
+        dico_actions["fidelity_action"] = [[i] for i in range(eos_action +1, eos_action + 1 + self.total_fidelities)]
+
+        #ALL ACTIONS
+        dico_actions["all_action"] = dico_actions["dna_action"] + dico_actions["eos_action"] + dico_actions["fidelity_action"]
+
+        return dico_actions
+
+
     
     def get_mask(self):
         super().get_mask()
 
-        mask = [1] * (len(self.action_space) + 1)
+        mask = [1] * (len(self.action_space["all_action"]))
 
-        if self.done : 
+        #EXTREME CASES : done or eos
+        if self.done:
             return [0 for _ in mask]
-        
-        if self.eos and not(self.done):
-            return [0 for _ in mask]
-        
-        seq_len = len(self.seq)
+        elif self.eos:
+            assert self.fid == None and self.done == False
+            mask[:self.first_fidelity_action] = [0 for _ in range(self.first_fidelity_action)]
+            return mask
 
-        if seq_len < self.min_seq_len:
-            mask[self.token_eos] = 0
+        else:          
+            #FIDELITY EXAMINATION
+            if self.fid != None:
+                #we can not chose another fidelity
+                mask[self.first_fidelity_action:] = [0 for _ in range(self.total_fidelities)]
+            
+            #Minimal length
+            assert self.min_seq_len < self.max_seq_len
+            len_seq = len(self.seq)
+            assert len_seq <= self.max_seq_len
+            if len_seq < self.min_seq_len :
+                #eos forbidden
+                mask[self.eos_token] = 0
+                return mask
+            if len_seq == self.max_seq_len:
+                #the only possible action is the EOS or the choice of the fidelity
+                mask[:self.eos_token] = [0 for _ in range(self.eos_token)] #fidelity already forbidden if fid chosen
+                return mask
+            
             return mask
-        
-        elif seq_len == self.max_seq_len:
-            mask[:self.token_eos] = [0] * len(self.action_space)
-            return mask
-        
-        else:
-            return mask
+
     
-    def get_parents(self, backward = False):
-        super().get_parents(backward)
+    def get_parents(self):
+        parents = []
+        parents_a = []
 
         if self.done:
-            if (self.eos == False) and (self.fid is not None) and (self.seq[-1] == self.token_eos):
-                parents_a = [self.fid]
-                parents = [(self.seq, None)]
-                if backward:
-                    #fid and seq updated in backward_sample():
-                    self.done = False
-                    self.eos = True
-                return parents, parents_a
+            assert self.fid != None
+            #Choice fid
+            parents_a += [self.fid_state2action(self.fid)]
+            parents += [(self.seq, None)]
+            #Choice eos
+            if self.seq[-1] != self.eos_token:
+                print(self.seq, self.fid, self.eos)
+            assert self.seq[-1] == self.eos_token
+            parents_a += [self.eos_token]
+            parents += [(self.seq[:-1], self.fid)]
 
-            else:
-                raise TypeError("Not good ending of sequence")
-
-        elif self.eos:
-            if (self.seq[-1] == self.token_eos) and self.done == False and (self.fid is None):
-                parents_a = [self.token_eos]
-                parents = [(self.seq[:-1], None)]
-                if backward:
-                    self.eos = False
-                return parents, parents_a 
-            else:
-                raise TypeError("not good last eos action")
+            return parents, parents_a
         
+        elif self.eos:
+            assert self.seq[-1] == self.eos_token
+            assert self.fid == None
+            parents_a += [self.eos_token]
+            parents += [(self.seq[:-1], self.fid)]
+            return parents, parents_a
+
         else:
-            parents = []
-            actions = []
-            for idx, a in enumerate(self.action_space):
-                if self.seq[-len(a): ] == list(a):
-                    parents.append((self.seq[:-len(a)], None))
-                    actions.append(idx)
+            #DNA action
+            for idx, a in enumerate(self.action_space["dna_action"]):
+                if self.seq[-len(a): ] == a:
+                    parents += [(self.seq[:-len(a)], self.fid)]
+                    parents_a += [idx]
             
-            return parents, actions
-    
+            #if fidelity was chosen, it is another possible action
+            if self.fid != None:
+                parents_a += [self.fid_state2action(self.fid)]
+                parents += [(self.seq, None)]
+            
+            return parents, parents_a
+
+    def update_status(self):
+        seq = self.seq
+        fid = self.fid
+
+        if len(seq) == 0:
+            self.done = False
+            self.eos = False
+        elif seq[-1] == self.eos_token and fid != None:
+            self.done = True
+            self.eos = False
+        elif seq[-1] == self.eos_token and fid == None:
+            self.done = False
+            self.eos = True
+        else:
+            self.done = False
+            self.eos = False
+
+
     def step(self, action):
-        super().step(action)
+        '''
+        action = a interger, not a list !
+        '''
+
         valid = False
         seq = self.seq
+        fid = self.fid
         seq_len = len(seq)
 
-        if self.eos:
-            if not(self.done) and (action[0] in range(self.total_fidelities)):
-                if seq_len - 1 >= self.min_seq_len and seq_len - 1 <= self.max_seq_len: #-1 for the eos action
+        if self.done:
+            raise TypeError("can't perform action when env.done")
         
-                    valid = True
-                    next_seq = seq
-                    next_fid = action[0]
-                    self.eos = False
-                    self.done = True
-                    self.seq = next_seq
-                    self.fid = next_fid
-                    self.n_actions_taken += 1
-                    self.last_action = action[0]
-                    return next_seq, action, valid
-                else:
-                    raise TypeError("constrain min/max len")
-            else:
-                raise TypeError("problem eos / done")
-       
-        elif (action == [self.token_eos]) and (self.done == False) and (self.eos == False):
-            if seq_len >= self.min_seq_len and seq_len <= self.max_seq_len:
+        elif self.eos:
+            assert fid == None
+            if action >= self.first_fidelity_action:
                 valid = True
-                next_seq = np.append(seq, action)
-                next_fid = None
-                self.eos = True
+                self.fid = self.fid_action2state(action)
+                self.seq = seq
+                self.eos = False
+                self.done = True
                 self.n_actions_taken += 1
-                self.seq = next_seq
-                self.fid = next_fid
-                self.last_action = self.token_eos
-                return next_seq, action, valid
-            else:
-                raise TypeError("action eos and done and eos state pb")
-        
+                self.last_action = action
+                return valid
 
-        
-        elif self.eos == False and not(action == [self.token_eos]):
-            if action in list(map(list, self.action_space)) and seq_len <= self.max_seq_len:
-                valid = True
-                next_seq = np.append(seq, action)
-                next_fid = None
-                self.n_actions_taken += 1
-                self.seq = next_seq
-                self.fid = next_fid
-                self.last_action = action[0]
-                return next_seq, action, valid
-        
-        elif self.done == True:
-            valid = False
-            return None, None, valid
+            else:
+                raise TypeError('only possible action when env.eos if fidelity choice')
         
         else:
-            raise TypeError("invalid action to take")
-    
+            #EOS
+            if action == self.eos_token:
+                assert self.min_seq_len < self.max_seq_len
+                assert seq_len >= self.min_seq_len and seq_len <= self.max_seq_len
+                valid = True
+                self.fid = fid
+                self.seq = np.append(seq, self.action_space["eos_action"])
+                if fid != None:
+                    self.eos = False
+                    self.done = True
+                elif fid == None:
+                    self.eos = True
+                    self.done = False
+                self.n_actions_taken += 1
+                self.last_action = action
+                return valid    
+
+            #FID
+            elif action >= self.first_fidelity_action:
+                assert fid == None and self.done == False
+                valid = True
+                self.fid = self.fid_action2state(action)
+                self.seq = seq
+                if self.eos:
+                    self.eos = False
+                    self.done = True
+                elif self.eos == False:
+                    self.eos = False
+                    self.done = False
+                self.n_actions_taken += 1
+                self.last_action = action
+                return valid
+
+            #DNA 
+            elif action in range(0, self.last_dna_action + 1):
+                assert self.eos == False and self.done == False
+                assert seq_len < self.max_seq_len
+                valid = True
+                self.fid = fid
+                dna_aptamers = self.action_space["dna_action"][action] #it is a list
+                self.seq = np.append(seq, dna_aptamers)
+                self.done = False
+                self.eos = False
+                self.n_actions_taken += 1
+                self.last_action = action
+                return valid
+            
+            else:
+                raise TypeError('not a valid action')
+
+
     def acq2reward(self, acq_values):
         min_reward = 1e-10
         true_reward = np.clip(acq_values, min_reward, None)
@@ -274,40 +322,28 @@ class EnvAptamers(EnvBase):
         exponentiate = np.vectorize(customed_af)
         return exponentiate(true_reward)
 
-    def get_reward(self, states, eos):
-        rewards = np.zeros(len(eos), dtype = float)
-        final_states = [s for s, e in zip(states, eos) if e]
-
+    def get_reward(self, states, done):
+        rewards = np.zeros(len(done), dtype = float)
+        final_states = [s for s, d in zip(states, done) if d]
         inputs_af_base = [self.manip2base(final_state) for final_state in final_states]
-
-        final_rewards = self.acq.get_sum_reward_batch(inputs_af_base).view(len(final_states)).cpu().detach().numpy()
-
+        final_rewards = self.acq.get_reward_batch(inputs_af_base).view(len(final_states)).cpu().detach().numpy()
         final_rewards = self.acq2reward(final_rewards)
-
-        eos = np.array(eos)
-        
-        rewards[eos] = final_rewards
-
+        done = np.array(done)    
+        rewards[done] = final_rewards
         return rewards
-    
-    def get_logits_fidelity(self, states):
-        inputs_base = [self.manip2base(state_eos) for state_eos in states]
-        logits = self.acq.get_logits_fidelity(inputs_base)
-        return logits
-        
+          
     def base2manip(self, state):
         seq_base = state[0]
         fid = state[1]
-        seq_manip = np.concatenate((seq_base, [self.token_eos]))
+        seq_manip = np.concatenate((seq_base, [self.eos_token]))
         return (seq_manip, fid)
     
     def manip2base(self, state):
         seq_manip = state[0]
         fid = state[1]
-        if seq_manip[-1] == self.token_eos:
-            seq_base = seq_manip[:-1]
-            return (seq_base, fid)
-        else:
-            raise TypeError
+        assert seq_manip[-1] == self.eos_token
+        seq_base = seq_manip[:-1]
+        return (seq_base, fid)
+
 
     

@@ -12,11 +12,11 @@ from botorch.models.cost import AffineFidelityCostModel
 from gpytorch.distributions import MultivariateNormal
 from botorch.posteriors.gpytorch import GPyTorchPosterior
 
-'''
-ACQUISITION WRAPPER
-'''
 
 class AcquisitionFunction:
+    '''
+    ACQUISITION WRAPPER
+    '''
     def __init__(self, config, proxy):
         self.config = config
         self.proxy = proxy.proxy
@@ -30,19 +30,11 @@ class AcquisitionFunction:
             self.acq = AcquisitionFunctionMES(self.config, self.proxy)
         else:
             raise NotImplementedError
-    
-    # def get_reward(self, inputs_af_base):
-    #     outputs = self.acq.get_reward_batch(inputs_af_base)
-    #     return  outputs
-    
-    
 
-'''
-BASE CLASS FOR ACQUISITION
-'''
+    
 class AcquisitionFunctionBase:
     '''
-    Cf Oracle class : generic AF class which calls the right AF sub_class
+    BASE CLASS FOR ACQUISITION
     '''
     @abstractmethod
     def __init__(self, config, proxy):
@@ -50,8 +42,8 @@ class AcquisitionFunctionBase:
         self.proxy = proxy
         self.device = self.config.device
         self.total_fidelities = self.config.env.total_fidelities
-        
-        #the specific class of the exact AF is instantiated here
+
+
     @abstractmethod
     def load_best_proxy(self):
         '''
@@ -71,9 +63,8 @@ class AcquisitionFunctionBase:
         pass
 
 
-
 '''
-SUBCLASS SPECIFIC ACQUISITION
+ACQUISITION FUNCTION ZOO
 '''
 
 class AcquisitionFunctionProxy(AcquisitionFunctionBase):
@@ -83,50 +74,20 @@ class AcquisitionFunctionProxy(AcquisitionFunctionBase):
     def load_best_proxy(self):
         super().load_best_proxy()
 
-    
-    def get_reward_batch(self, inputs_af_base): #inputs_af = list of ...
-        super().get_reward_batch(inputs_af_base)
-
+    def get_reward_batch(self, inputs_af_base): 
+        '''
+        So far, we expect inputs_af_base of shape nb_inputs x 1
+        '''
         inputs_af = list(map(self.base2af, inputs_af_base))
         inputs = torch.stack(inputs_af).view(len(inputs_af_base), -1)
 
         self.load_best_proxy()
         self.proxy.model.eval()
+
         with torch.no_grad():
             outputs = self.proxy.model(inputs)
-        return outputs
 
-    def get_logits_fidelity(self, inputs_eos_base):
-        inputs_all_fidelities = [(input[0], fid) for input in inputs_eos_base for fid in range(self.total_fidelities)]
-        # inputs_af = list(map(self.base2af, inputs_all_fidelities))
-        # inputs_af = torch.stack(inputs_af).view(len(inputs_eos_base) * self.total_fidelities, -1)
-       
-        outputs = self.get_reward_batch(inputs_all_fidelities)
-
-        return outputs.view(len(inputs_eos_base), self.total_fidelities)
-
-    def get_sum_reward_batch(self, inputs_af_base):
-        inputs_indices = torch.LongTensor(
-            sum([[i] * self.total_fidelities for i in range(len(inputs_af_base))], [])
-        ).to(self.device)
-        inputs_base_all_fidelities = [(input[0], fid) for input in inputs_af_base for fid in range(self.total_fidelities)]
-        
-        # inputs_af_all_fidelities = list(map(self.base2af, inputs_base_all_fidelities))
-        # inputs_af_all_fidelities = torch.stack(inputs_af_all_fidelities).view(len(inputs_af_base) * self.total_fidelities, -1)
-    
-        outputs = self.get_reward_batch(inputs_base_all_fidelities).view(len(inputs_base_all_fidelities))
-        # print(outputs)
-        # print(inputs_indices)
-        # print(torch.zeros(
-        #     (len(inputs_af_base,))
-        # ))
-        # return
-        sum_rewards = torch.zeros(
-            (len(inputs_af_base,))
-        ).to(self.device).index_add_(0, inputs_indices, outputs)
-
-        return sum_rewards
-
+        return outputs #no need to .view, it is already the good shape
 
     def base2af(self, state):
         #useful format
@@ -137,16 +98,18 @@ class AcquisitionFunctionProxy(AcquisitionFunctionBase):
         seq = state[0]
         initial_len = len(seq)
         fid = state[1]
+
         #into a tensor and then ohe
         seq_tensor = torch.from_numpy(seq)
         seq_ohe = F.one_hot(seq_tensor.long(), num_classes = self.dict_size +1)
         seq_ohe = seq_ohe.reshape(1, -1).float()
+
         #addind eos token
         eos_tensor = torch.tensor([self.dict_size])
         eos_ohe = F.one_hot(eos_tensor.long(), num_classes=self.dict_size + 1)
         eos_ohe = eos_ohe.reshape(1, -1).float()
-
         input_af = torch.cat((seq_ohe, eos_ohe), dim = 1)
+
         #adding 0-padding
         number_pads = self.max_len - initial_len
         if number_pads:
@@ -155,6 +118,7 @@ class AcquisitionFunctionProxy(AcquisitionFunctionBase):
             ).view(1, -1)
             input_af = torch.cat((input_af, padding), dim = 1)
         
+        #Adding the fidelity
         fid_tensor = torch.tensor([fid])
         fid_tensor = F.one_hot(fid_tensor.long(), num_classes = self.total_fidelities)
         fid_tensor = fid_tensor.reshape(1, -1).float()
@@ -193,8 +157,27 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
         #object with customed weights of model
         return None
 
-    def get_reward_batch(self, inputs_af_base): #inputs_af = list of ...
 
+    def project_max_fidelity(self, tensor_af):
+        #tensor in af format and then put them to max fidelity for the proxy
+        #useful format
+        
+        nb_inputs = len(tensor_af)
+        #isolate the non_fidelity part
+        tensor_af = tensor_af.view(nb_inputs, -1)
+        inputs_without_fid = tensor_af[:, :-self.total_fidelities]
+       
+    
+        #get ohe representations of the highest fidelity
+        max_fid = torch.tensor([self.total_fidelities - 1]) #convention : 0 to total_fidelities - 1
+        max_fid = F.one_hot(max_fid.long(), num_classes = self.total_fidelities)
+        max_fid = max_fid.reshape(1, -1).float()
+
+        max_fids = max_fid.repeat(nb_inputs, 1)
+        input_max_fid = torch.cat((inputs_without_fid, max_fids), dim = 1) 
+        return input_max_fid.to(self.device).view(nb_inputs, 1, -1)#[0]
+
+    def get_reward_batch(self, inputs_af_base):
         #create the model
         model = self.make_botorch_model()
         #make candidate set
@@ -218,48 +201,6 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
         
         return acq_values
 
-        # super().get_reward_batch(inputs_af_base)
-
-        # inputs_af = list(map(self.base2af, inputs_af_base))
-        # inputs = torch.stack(inputs_af).view(len(inputs_af_base), -1)
-
-        # self.load_best_proxy()
-        # self.proxy.model.eval()
-        # with torch.no_grad():
-        #     outputs = self.proxy.model(inputs)
-        # return outputs
-
-    def get_logits_fidelity(self, inputs_eos_base):
-        inputs_all_fidelities = [(input[0], fid) for input in inputs_eos_base for fid in range(self.total_fidelities)]
-        # inputs_af = list(map(self.base2af, inputs_all_fidelities))
-        # inputs_af = torch.stack(inputs_af).view(len(inputs_eos_base) * self.total_fidelities, -1)
-       
-        outputs = self.get_reward_batch(inputs_all_fidelities)
-
-        return outputs.view(len(inputs_eos_base), self.total_fidelities)
-
-    def get_sum_reward_batch(self, inputs_af_base):
-        inputs_indices = torch.LongTensor(
-            sum([[i] * self.total_fidelities for i in range(len(inputs_af_base))], [])
-        ).to(self.device)
-        inputs_base_all_fidelities = [(input[0], fid) for input in inputs_af_base for fid in range(self.total_fidelities)]
-        
-        # inputs_af_all_fidelities = list(map(self.base2af, inputs_base_all_fidelities))
-        # inputs_af_all_fidelities = torch.stack(inputs_af_all_fidelities).view(len(inputs_af_base) * self.total_fidelities, -1)
-    
-        outputs = self.get_reward_batch(inputs_base_all_fidelities).view(len(inputs_base_all_fidelities))
-        # print(outputs)
-        # print(inputs_indices)
-        # print(torch.zeros(
-        #     (len(inputs_af_base,))
-        # ))
-        # return
-        sum_rewards = torch.zeros(
-            (len(inputs_af_base,))
-        ).to(self.device).index_add_(0, inputs_indices, outputs)
-
-        return sum_rewards
-
 
     def base2af(self, state):
         #useful format
@@ -270,16 +211,19 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
         seq = state[0]
         initial_len = len(seq)
         fid = state[1]
+
         #into a tensor and then ohe
         seq_tensor = torch.from_numpy(seq)
         seq_ohe = F.one_hot(seq_tensor.long(), num_classes = self.dict_size +1)
         seq_ohe = seq_ohe.reshape(1, -1).float()
+
         #addind eos token
         eos_tensor = torch.tensor([self.dict_size])
         eos_ohe = F.one_hot(eos_tensor.long(), num_classes=self.dict_size + 1)
         eos_ohe = eos_ohe.reshape(1, -1).float()
 
         input_af = torch.cat((seq_ohe, eos_ohe), dim = 1)
+
         #adding 0-padding
         number_pads = self.max_len - initial_len
         if number_pads:
@@ -287,7 +231,8 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
                 [torch.tensor([0] * (self.dict_size +1))] * number_pads
             ).view(1, -1)
             input_af = torch.cat((input_af, padding), dim = 1)
-        
+
+        #adding the fidelity 
         fid_tensor = torch.tensor([fid])
         fid_tensor = F.one_hot(fid_tensor.long(), num_classes = self.total_fidelities)
         fid_tensor = fid_tensor.reshape(1, -1).float()
@@ -295,25 +240,6 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
         input_af = torch.cat((input_af, fid_tensor), dim = 1)
 
         return input_af.to(self.device)[0]
-
-    def project_max_fidelity(self, tensor_af):
-        #tensor in af format and then put them to max fidelity for the proxy
-        #useful format
-        
-        nb_inputs = len(tensor_af)
-        #isolate the non_fidelity part
-        tensor_af = tensor_af.view(nb_inputs, -1)
-        inputs_without_fid = tensor_af[:, :-self.total_fidelities]
-       
-    
-        #get ohe representations of the highest fidelity
-        max_fid = torch.tensor([self.total_fidelities - 1]) #convention : 0 to total_fidelities - 1
-        max_fid = F.one_hot(max_fid.long(), num_classes = self.total_fidelities)
-        max_fid = max_fid.reshape(1, -1).float()
-
-        max_fids = max_fid.repeat(nb_inputs, 1)
-        input_max_fid = torch.cat((inputs_without_fid, max_fids), dim = 1) 
-        return input_max_fid.to(self.device).view(nb_inputs, 1, -1)#[0]
 
 
 
@@ -329,18 +255,19 @@ class ProxyBotorch(Model):
     
     def posterior(self, X, observation_noise = False, posterior_transform = None):
         super().posterior(X)
-        #for each element X, compute several proxy values (with dropout), to deduce the mean and std
+        #loading the best proxy
         if os.path.exists(self.config.path.model_proxy):
             self.proxy.load_model(self.config.path.model_proxy)
         else:
             raise FileNotFoundError
-        dim_input = X.dim()       
+        #depending on the dimension the input, we wil have different formats
+        dim_input = X.dim()    
+        #for each element X, compute several proxy values (with dropout), to deduce the mean and std   
         self.proxy.model.train(mode = True)
         with torch.no_grad():
             outputs = torch.hstack([self.proxy.model(X) for _ in range(self.nb_samples)]).cpu().detach().numpy()
             mean_1 = np.mean(outputs, axis = 1) 
             std_1 = np.std(outputs, axis = 1) 
-
         #For the mean
         mean = torch.from_numpy(mean_1)
         #For the variance
@@ -349,14 +276,16 @@ class ProxyBotorch(Model):
         nb_cofid = list_std.shape[1]
         list_covar = [torch.diag(list_std[i, ...].view(nb_cofid)) for i in range(nb_inputs)]
         covar= torch.stack(list_covar, 0)
-
+        #tinkering to fit the correct input format of MultivariateNormal
         if dim_input == 3:
             mean = mean.unsqueeze(1)
             covar = covar.unsqueeze(1)   
         if dim_input == 4:
             mean = mean.view(mean.shape[0], mean.shape[2], mean.shape[1])
-            covar = covar.unsqueeze(1)        
+            covar = covar.unsqueeze(1)    
+        #creating the mvn    
         mvn = MultivariateNormal(mean = mean, covariance_matrix = covar)
+        #deducing the posterior
         posterior = GPyTorchPosterior(mvn)
 
         return posterior

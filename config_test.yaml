@@ -1,7 +1,7 @@
 device : "cpu"
 debug : True
 al:
-  n_iter: 3
+  n_iter: 10
   queries_per_it: 100
 
 path :
@@ -13,14 +13,14 @@ path :
 env:
   main : "aptamers"
   dict_size : 4
-  min_len : 30
-  max_len : 40
+  min_len : 10
+  max_len : 15
   min_word_len : 1
   max_word_len : 1
   total_fidelities : 3
 
 oracle:
-  main : "mlp"
+  main : "toy"
   init_dataset:
     seed : 0
     init_len : 100
@@ -46,7 +46,7 @@ gflownet:
   sampling:
     temperature : 1
     seed : 1
-    random_action_prob : 0.1
+    random_action_prob : 0.2
   training:
     pct_batch_empirical : 0.1
     batch_size : 16
@@ -63,7 +63,7 @@ gflownet:
     ttsr : 3
 
 acquisition:
-  main: "MES"
+  main: "proxy"
   
 
   
