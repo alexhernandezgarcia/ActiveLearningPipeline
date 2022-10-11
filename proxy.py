@@ -5,15 +5,10 @@ from torch import nn, optim, cuda, backends
 from sklearn.utils import shuffle
 from tqdm import tqdm
 import numpy as np
-#to check path
 import os
-#for mother class of Oracle
 from abc import abstractmethod
 
 class Proxy:
-    '''
-    GLOBAL CLASS PROXY WRAPPER, callable with key methods
-    '''
     def __init__(self, config, oracle, logger):
         self.config = config
         self.logger = logger
@@ -32,9 +27,6 @@ class Proxy:
         return
 
 
-'''
-PROXY OBJECTS
-'''    
 class ProxyBase:
     def __init__(self, config, logger):
         self.config = config
@@ -66,7 +58,7 @@ class ProxyBase:
         Ensemble methods will be another separate class
         '''
         self.model = self.model_class(self.config).to(self.device)
-        self.optimizer = optim.AdamW(self.model.parameters(), amsgrad = True)
+        self.optimizer = optim.AdamW(self.model.parameters(), amsgrad = True) #has to be parametrized ? 
 
     @abstractmethod
     def load_model(self, dir_name = None):
@@ -151,21 +143,6 @@ class ProxyBase:
 
             self.epochs += 1
 
-            # if self.converged == 1:
-            #     self.statistics.log_comet_proxy_training(
-            #         self.err_tr_hist, self.err_te_hist
-            #     )
-        # dataset = np.load(self.path_data, allow_pickle = True)
-        # dataset = dataset.item()
-
-        # samples = list(map(lambda x: self.base2proxy(x), dataset['samples']))
-        # samples = np.array(samples)
-
-        # tr = data.DataLoader(samples, batch_size=len(samples), shuffle=True, num_workers= 0, pin_memory=False)
-        # for _, trainData in enumerate(tr):
-        #     outputs = self.model(trainData)
-
-        # print(outputs)
 
     @abstractmethod
     def train(self, tr):
@@ -350,7 +327,6 @@ class BuildDataset:
         dataset = dataset.item()
 
         #Targets of training
-    
         targets = list(map(self.oracle2proxy, dataset["energies"]))
         self.targets = np.array(targets)
 

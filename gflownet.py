@@ -7,9 +7,7 @@ from sklearn.utils import shuffle
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
-#to check path
 import os
-#for mother class of Oracle
 from abc import abstractmethod
 
 #Utils function for the whole file, fixed once and for all

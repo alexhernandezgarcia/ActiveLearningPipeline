@@ -11,4 +11,5 @@ distanceTests.py
 sh/
 *.txt
 !requirements.txt
+!read_me.txt
 *.out

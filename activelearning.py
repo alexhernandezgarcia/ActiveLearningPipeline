@@ -10,10 +10,6 @@ from env import Env
 from gflownet import GFlowNet
 from querier import Querier
 
-#--------------------------------
-'''
-AL Global pipeline
-'''
 
 #TODO : instantiate the config with hydra . Once we have the config object we can pass it to other functions
 class ActiveLearning:
@@ -28,7 +24,7 @@ class ActiveLearning:
 
         #load the main components of the AL pipeline
         self.oracle = Oracle(self.config)
-        self.proxy = Proxy(self.config, self.oracle, self.logger) #self.oracle transmits the function oracle2proxy (opposite value for aptamers)
+        self.proxy = Proxy(self.config, self.oracle, self.logger) 
         self.acq = AcquisitionFunction(self.config, self.proxy)
         self.env = Env(self.config, self.acq)
         self.gflownet = GFlowNet(self.config, self.logger, self.env)
@@ -48,14 +44,11 @@ class ActiveLearning:
     
     def iterate(self):
         self.proxy.train()
-     
         self.gflownet.train()
-
         queries = self.querier.build_query()
-        print(queries)
         energies = self.oracle.score(queries)
         self.oracle.update_dataset(queries, energies)
-    
+
     def setup(self):
         '''
         Creates the working directories to store the data.

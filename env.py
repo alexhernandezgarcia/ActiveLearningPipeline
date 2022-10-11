@@ -1,6 +1,5 @@
 import numpy as np
 import itertools
-#for mother class of Oracle
 from abc import abstractmethod
 
 class Env:

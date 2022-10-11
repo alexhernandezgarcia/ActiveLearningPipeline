@@ -14,9 +14,7 @@ try: # we don't always install these on every platform
 except:
     print("COULD NOT IMPORT NUPACK ON THIS DEVICE - proceeding, but will crash with nupack oracle selected")
     pass
-'''
-Oracle Wrapper, callable in the AL pipeline, with key methods
-'''
+
 class Oracle:
     '''
     Generic Class for the oracle. 
@@ -40,25 +38,22 @@ class Oracle:
         else:
             raise NotImplementedError
         
-        self.oracle2proxy = self.oracle.oracle2proxy
+        self.oracle2proxy = self.oracle.oracle2proxy #this will be passed to the proxy 
 
     def initialize_dataset(self, save = True, return_data = False):
         #the method to initialize samples in the BASE format is specific to each oracle for now. It can be changed.
         #the first samples are in the "base format", so as to be directly saved as such and sent for query (base2oracle transition) 
-
         samples = self.oracle.initialize_samples_base()
 
         data = {}
         data["samples"] = samples
         data["energies"] = self.score(samples)
 
-        #print("iniail data", data)
         if save:
             np.save(self.path_data, data)
         if return_data:
             return data
-       
-    
+          
     def score(self, queries):
         '''
         Calls the specific oracle (class/function) and apply its "get_score" method on the dataset
@@ -75,9 +70,6 @@ class Oracle:
         return
 
 
-
-#For generalization purposes, the oracles are outside the main class of oracle
-#First, general a general wrapper for oracles. All the other files.py follow the same formalism for modularity 
 '''
 BaseClass model for all other oracles
 '''
@@ -90,13 +82,6 @@ class OracleBase:
         pass
 
     @abstractmethod
-    def base2oracle(self, state):
-        '''
-        Transition from base format (format of the queries and stored data) to a format callable by the oracle
-        '''
-        pass
-    
-    @abstractmethod
     def get_score(self, queries):
         '''
         - Transforms the queries to a good format with base2oracle
@@ -105,12 +90,17 @@ class OracleBase:
         pass
 
     @abstractmethod
+    def base2oracle(self, state):
+        '''
+        Transition from base format (format of the queries and stored data) to a format callable by the oracle
+        '''
+        pass
+
+    @abstractmethod
     def oracle2proxy(self, oracle_value):
         pass
 
-'''
-Different Oracles Implemented
-'''
+
 
 class OracleMLP(OracleBase):
     def __init__(self, config):
@@ -182,12 +172,10 @@ class OracleMLP(OracleBase):
             #we filter the queries per fidelity to call a specific MLP on each
             indexes = df_queries.index[df_queries["fidelity"] == fidelity].tolist()
             sub_samples = df_queries["seq_oracle"][indexes].reset_index(drop = True).tolist()
-            
-            
+             
             #load self.model MLP - fidelity
             self.load_MLP(fidelity)
-
-            
+   
             #format the sub_samples and call the self.model
             inputs_model = torch.stack(sub_samples).view(len(sub_samples), -1)
             sub_energies = self.model(inputs_model)
@@ -313,8 +301,6 @@ class OracleNupack(OracleBase):
         sequence = state[0]
         fid = state[1]
 
-
-
         if type(sequence) != np.ndarray:
             sequence = np.asarray(sequence)
 
@@ -331,12 +317,10 @@ class OracleNupack(OracleBase):
             elif na == 3:
                 letters += 'G'
 
-
-
         return (letters, fid)
 
 
-    def get_score(self, queries, returnFunc = "energy"):
+    def get_score(self, queries, returnFunc = "energy"): #This function is quite messy : I intentionally kept and commented other analyzes with Nupack from the previous code in case we need them in the future
         
         temperature = 310.0  # Kelvin
         ionicStrength = 1.0 # molar
