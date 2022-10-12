@@ -499,7 +499,7 @@ class GFlowNet_A(GFlowNetBase):
                     )
                 #for backward sampling, the last action is updated after
                 previous_action = env.last_action 
-                seq_ohe = self.manip2policy(previous_state)
+                seq_ohe = self.manip2policy(previous_state)       
                 parents_ohe = torch.stack(
                     list(map(self.manip2policy, parents))
                     )
@@ -525,7 +525,7 @@ class GFlowNet_A(GFlowNetBase):
                 )
 
 
-                # print(              
+                # print(
                 #     [
                 #         seq_ohe.unsqueeze(0),
                 #         tl_list([previous_action]),
@@ -538,16 +538,17 @@ class GFlowNet_A(GFlowNetBase):
                 #         tl_list([env.id]*len(parents)),
                 #         tl_list(
                 #             [
-                #                 len(previous_state) - 1 if not previous_done
-                #                 else len(previous_state)
+                #                 len(previous_state[0]) - 1 if not previous_done
+                #                 else len(previous_state[0])
                 #             ]
                 #         )
                 #     ]
                 # )
+            
 
             env.done = True
 
-        
+
         envs = [env for env in envs if not env.done]
         self.sampling_model = self.best_model
         self.sampling_model.eval()
@@ -608,7 +609,7 @@ class GFlowNet_A(GFlowNetBase):
                     # print(
                     #         [
                     #             state_ohe.unsqueeze(0),
-                    #             tl_list([int(action)]),
+                    #             tl_list([int(action)]), #don't know why it is a scalar sometime ...
                     #             tf_list([mask]),
                     #             env.get_state(),
                     #             parents_ohe.view(len(parents), -1),
@@ -616,10 +617,9 @@ class GFlowNet_A(GFlowNetBase):
                     #             env.eos,
                     #             env.done,
                     #             tl_list([env.id] * len(parents)),
-                    #             tl_list([env.n_actions_taken - 1]),
+                    #             tl_list([env.n_actions_taken - 1]), #convention, we start at 0
                     #         ]
                     # )
-
 
                     
             envs = [env for env in envs if not env.done]
@@ -643,10 +643,10 @@ class GFlowNet_A(GFlowNetBase):
         rewards = self.env.get_reward(input_reward, eos)
 
 
-        rewards = [tl_list([r]) for r in rewards]
+        rewards = [tf_list([r]) for r in rewards]
         eos = [tl_list([e]) for e in eos]
         done = [tl_list([d]) for d in done]
-       
+
 
         batch = list(
             zip(

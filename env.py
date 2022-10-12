@@ -268,9 +268,9 @@ class EnvAptamers(EnvBase):
             raise TypeError("invalid action to take")
     
     def acq2reward(self, acq_values):
-        min_reward = 1e-10
+        min_reward = 1e-20
         true_reward = np.clip(acq_values, min_reward, None)
-        customed_af = lambda x: x #to favor the higher rewards in a more spiky way, can be customed
+        customed_af = lambda x: x**3 #to favor the higher rewards in a more spiky way, can be customed
         exponentiate = np.vectorize(customed_af)
         return exponentiate(true_reward)
 

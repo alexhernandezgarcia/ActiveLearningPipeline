@@ -40,7 +40,7 @@ class ActiveLearning:
 
         #we initialize the first dataset
         self.oracle.initialize_dataset()
-        
+
         #we run each round of active learning
         for self.iter in range(self.config.al.n_iter):
             self.iterate()
@@ -48,9 +48,8 @@ class ActiveLearning:
     
     def iterate(self):
         self.proxy.train()
-        
-        self.gflownet.train()
-        
+        self.gflownet.train()  
+   
         queries = self.querier.build_query()
         print(queries)
         energies = self.oracle.score(queries)

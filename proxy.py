@@ -161,11 +161,12 @@ class ProxyBase:
         # samples = list(map(lambda x: self.base2proxy(x), dataset['samples']))
         # samples = np.array(samples)
 
-        # tr = data.DataLoader(samples, batch_size=len(samples), shuffle=True, num_workers= 0, pin_memory=False)
+        # tr = data.DataLoader(samples, batch_size=len(samples), shuffle=False, num_workers= 0, pin_memory=False)
         # for _, trainData in enumerate(tr):
         #     outputs = self.model(trainData)
 
         # print(outputs)
+        # print(dataset["energies"])
 
     @abstractmethod
     def train(self, tr):
@@ -474,7 +475,7 @@ class MLP(nn.Module):
         # build hidden layers
         self.lin_layers_before_fid = []
         self.activations_before_fid = []
-        self.norms_before_fid = []  # pas pour l'instant
+        #self.norms_before_fid = []  # pas pour l'instant
         self.dropouts_before_fid = []
 
         for _ in range(self.layers_before_fid):
@@ -484,18 +485,18 @@ class MLP(nn.Module):
             self.activations_before_fid.append(
                 Activation(act_func)
             )
-            self.norms_before_fid.append(nn.BatchNorm1d(self.filters_before_fid))
+            #self.norms_before_fid.append(nn.BatchNorm1d(self.filters_before_fid))
             self.dropouts_before_fid.append(nn.Dropout(p=self.dropout))
 
         # initialize module lists
         self.lin_layers_before_fid = nn.ModuleList(self.lin_layers_before_fid)
         self.activations_before_fid = nn.ModuleList(self.activations_before_fid)
-        self.norms_before_fid = nn.ModuleList(self.norms_before_fid)
+        #self.norms_before_fid = nn.ModuleList(self.norms_before_fid)
         self.dropouts_before_fid = nn.ModuleList(self.dropouts_before_fid)
 
         self.lin_layers_after_fid = []
         self.activations_after_fid = []
-        self.norms_after_fid = []
+        #self.norms_after_fid = []
         self.dropouts_after_fid = []
 
         for _ in range(self.layers_after_fid):
@@ -505,13 +506,13 @@ class MLP(nn.Module):
             self.activations_after_fid.append(
                 Activation(act_func)
             )
-            self.norms_after_fid.append(nn.BatchNorm1d(self.filters_after_fid))
+            #self.norms_after_fid.append(nn.BatchNorm1d(self.filters_after_fid))
             self.dropouts_after_fid.append(nn.Dropout(p=self.dropout))
 
         # initialize module lists
         self.lin_layers_after_fid = nn.ModuleList(self.lin_layers_after_fid)
         self.activations_after_fid = nn.ModuleList(self.activations_after_fid)
-        self.norms_after_fid = nn.ModuleList(self.norms_after_fid)
+        #self.norms_after_fid = nn.ModuleList(self.norms_after_fid)
         self.dropouts_after_fid = nn.ModuleList(self.dropouts_after_fid)
 
     def forward(self, x):

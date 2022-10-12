@@ -13,14 +13,14 @@ path :
 env:
   main : "aptamers"
   dict_size : 4
-  min_len : 30
-  max_len : 40
+  min_len : 10
+  max_len : 20
   min_word_len : 1
   max_word_len : 1
   total_fidelities : 3
 
 oracle:
-  main : "mlp"
+  main : "toy"
   init_dataset:
     seed : 0
     init_len : 100
@@ -50,7 +50,7 @@ gflownet:
   training:
     pct_batch_empirical : 0.1
     batch_size : 16
-    training_steps : 10
+    training_steps : 1000
     clip_grad_norm : 10
     dropout: 0.1
     opt : "adam"

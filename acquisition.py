@@ -173,6 +173,7 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
         super().load_best_proxy()
 
     def make_botorch_model(self):
+        self.load_best_proxy()
         return ProxyBotorch(self.config, self.proxy)
     
     def make_candidate_set(self):
@@ -206,7 +207,7 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
         #transform inputs_af_base into good format
         inputs_af = list(map(self.base2af, inputs_af_base))
         inputs_af = torch.stack(inputs_af).view(len(inputs_af_base),1, -1)
-
+ 
         MES = qMultiFidelityMaxValueEntropy(
             model = model, 
             candidate_set = candidates, 
@@ -246,8 +247,9 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
         
         # inputs_af_all_fidelities = list(map(self.base2af, inputs_base_all_fidelities))
         # inputs_af_all_fidelities = torch.stack(inputs_af_all_fidelities).view(len(inputs_af_base) * self.total_fidelities, -1)
-    
+        #print("INPUT OF MES", inputs_base_all_fidelities)
         outputs = self.get_reward_batch(inputs_base_all_fidelities).view(len(inputs_base_all_fidelities))
+        #print("OUTPUT OF MES", outputs)
         # print(outputs)
         # print(inputs_indices)
         # print(torch.zeros(
@@ -302,6 +304,7 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
         
         nb_inputs = len(tensor_af)
         #isolate the non_fidelity part
+     
         tensor_af = tensor_af.view(nb_inputs, -1)
         inputs_without_fid = tensor_af[:, :-self.total_fidelities]
        
@@ -313,6 +316,7 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
 
         max_fids = max_fid.repeat(nb_inputs, 1)
         input_max_fid = torch.cat((inputs_without_fid, max_fids), dim = 1) 
+
         return input_max_fid.to(self.device).view(nb_inputs, 1, -1)#[0]
 
 
@@ -336,29 +340,36 @@ class ProxyBotorch(Model):
             raise FileNotFoundError
         dim_input = X.dim()       
         self.proxy.model.train(mode = True)
+        #print("input", X)
         with torch.no_grad():
             outputs = torch.hstack([self.proxy.model(X) for _ in range(self.nb_samples)]).cpu().detach().numpy()
             mean_1 = np.mean(outputs, axis = 1) 
-            std_1 = np.std(outputs, axis = 1) 
-
+            #print("mean_1", mean_1)
+            var_1 = np.var(outputs, axis = 1) 
+            #print("std_1", std_1)
         #For the mean
         mean = torch.from_numpy(mean_1)
         #For the variance
-        list_std = torch.from_numpy(std_1)
-        nb_inputs = list_std.shape[0]
-        nb_cofid = list_std.shape[1]
-        list_covar = [torch.diag(list_std[i, ...].view(nb_cofid)) for i in range(nb_inputs)]
-        covar= torch.stack(list_covar, 0)
-
+        list_var = torch.from_numpy(var_1)
+        nb_inputs = list_var.shape[0]
+        nb_cofid = list_var.shape[1]
+        list_covar = [torch.diag(list_var[i, ...].view(nb_cofid)) for i in range(nb_inputs)]
+        covar= torch.stack(list_covar, 0)   
+        #import pdb
         if dim_input == 3:
-            mean = mean.unsqueeze(1)
-            covar = covar.unsqueeze(1)   
+            mean = mean
+            covar = covar
+
         if dim_input == 4:
-            mean = mean.view(mean.shape[0], mean.shape[2], mean.shape[1])
-            covar = covar.unsqueeze(1)        
+            #mean = mean.view(mean.shape[0], mean.shape[2], mean.shape[1])
+            #pdb.set_trace()
+            mean = mean.unsqueeze(1).squeeze(-1)
+            #import pdb; pdb.set_trace()
+            covar = covar.unsqueeze(1) 
+        #print("mean input to mvn", mean.shape, "covar", covar.shape)
         mvn = MultivariateNormal(mean = mean, covariance_matrix = covar)
         posterior = GPyTorchPosterior(mvn)
-
+        
         return posterior
     
     @property

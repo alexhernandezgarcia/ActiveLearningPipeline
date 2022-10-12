@@ -14,6 +14,8 @@ try: # we don't always install these on every platform
 except:
     print("COULD NOT IMPORT NUPACK ON THIS DEVICE - proceeding, but will crash with nupack oracle selected")
     pass
+
+
 '''
 Oracle Wrapper, callable in the AL pipeline, with key methods
 '''
@@ -52,7 +54,7 @@ class Oracle:
         data["samples"] = samples
         data["energies"] = self.score(samples)
 
-        #print("iniail data", data)
+        # print("initial data", data)
         if save:
             np.save(self.path_data, data)
         if return_data:
@@ -140,7 +142,7 @@ class OracleMLP(OracleBase):
 
         full_samples = []
         for molecule in samples:
-            full_samples += [[molecule, np.random.randint(0, self.total_fidelities)]]
+            full_samples += [(molecule, np.random.randint(0, self.total_fidelities))]
 
         return full_samples
 
@@ -193,7 +195,7 @@ class OracleMLP(OracleBase):
             sub_energies = self.model(inputs_model)
 
             for i, index in enumerate(indexes):
-                df_energies[index] = sub_energies[i]
+                df_energies[index] = max(sub_energies[i], 0)
         
         return df_energies.tolist()
 
@@ -253,6 +255,7 @@ class OracleToy(OracleBase):
         return state
 
     def get_score(self, queries):
+
         dico_std = {
             0: 1,
             1 : 0.5,
@@ -262,7 +265,7 @@ class OracleToy(OracleBase):
         def toy_function(state):
             seq = state[0]
             fid = state[1]
-            mean = float(np.count_nonzero(seq == 0))
+            mean = float(np.count_nonzero(seq == 3))
             std = dico_std[int(fid)]
             result = np.random.normal(mean, std)
             if result < 0:
