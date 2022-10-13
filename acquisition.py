@@ -86,7 +86,6 @@ class AcquisitionFunctionProxy(AcquisitionFunctionBase):
     
     def get_reward_batch(self, inputs_af_base): #inputs_af = list of ...
         super().get_reward_batch(inputs_af_base)
-
         inputs_af = list(map(self.base2af, inputs_af_base))
         inputs = torch.stack(inputs_af).view(len(inputs_af_base), -1)
 
