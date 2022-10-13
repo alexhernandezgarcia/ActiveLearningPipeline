@@ -185,7 +185,7 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
         candidates = list(map(self.base2af, samples))
         #turn into single tensor
         candidates = torch.stack(candidates)
-        candidates = candidates.view(len(samples), 1, -1)
+        candidates = candidates.view(len(samples), 1, -1).to(self.device)
 
         return candidates
     
@@ -312,7 +312,7 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
         #get ohe representations of the highest fidelity
         max_fid = torch.tensor([self.total_fidelities - 1]) #convention : 0 to total_fidelities - 1
         max_fid = F.one_hot(max_fid.long(), num_classes = self.total_fidelities)
-        max_fid = max_fid.reshape(1, -1).float()
+        max_fid = max_fid.reshape(1, -1).float().to(self.device)
 
         max_fids = max_fid.repeat(nb_inputs, 1)
         input_max_fid = torch.cat((inputs_without_fid, max_fids), dim = 1) 
@@ -329,6 +329,7 @@ class ProxyBotorch(Model):
     def __init__(self, config, proxy):
         self.config = config
         self.proxy = proxy
+        self.device = self.config.device
         self.nb_samples = 20
     
     def posterior(self, X, observation_noise = False, posterior_transform = None):
@@ -357,8 +358,8 @@ class ProxyBotorch(Model):
         covar= torch.stack(list_covar, 0)   
         #import pdb
         if dim_input == 3:
-            mean = mean
-            covar = covar
+            mean = mean.unsqueeze(1)
+            covar = covar.unsqueeze(1)
 
         if dim_input == 4:
             #mean = mean.view(mean.shape[0], mean.shape[2], mean.shape[1])
@@ -367,7 +368,8 @@ class ProxyBotorch(Model):
             #import pdb; pdb.set_trace()
             covar = covar.unsqueeze(1) 
         #print("mean input to mvn", mean.shape, "covar", covar.shape)
-        mvn = MultivariateNormal(mean = mean, covariance_matrix = covar)
+
+        mvn = MultivariateNormal(mean = mean.to(self.device), covariance_matrix = covar.to(self.device))
         posterior = GPyTorchPosterior(mvn)
         
         return posterior
