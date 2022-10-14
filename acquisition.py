@@ -182,11 +182,13 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
         dataset = np.load(loading_path, allow_pickle = True).item()
         samples = dataset["samples"] 
         #convert into list of af tensors
+        # samples[idx] = [array([1, 1, 0, 0, 3, 2, 3, 1, 1, 0]), 2]
         candidates = list(map(self.base2af, samples))
+        # candidates = (108, 100)
         #turn into single tensor
         candidates = torch.stack(candidates)
         candidates = candidates.view(len(samples), 1, -1)
-
+        # candistaes = (100, 1, 108)
         return candidates
     
     def make_cost_utility(self):
@@ -276,12 +278,15 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
         seq_tensor = torch.from_numpy(seq)
         seq_ohe = F.one_hot(seq_tensor.long(), num_classes = self.dict_size +1)
         seq_ohe = seq_ohe.reshape(1, -1).float()
+        # seq_ohe.shape = (1, 100)
         #addind eos token
         eos_tensor = torch.tensor([self.dict_size])
         eos_ohe = F.one_hot(eos_tensor.long(), num_classes=self.dict_size + 1)
         eos_ohe = eos_ohe.reshape(1, -1).float()
+        # eos_ohe.shape = (1, 5)
 
         input_af = torch.cat((seq_ohe, eos_ohe), dim = 1)
+        # input_af = (1, 105)
         #adding 0-padding
         number_pads = self.max_len - initial_len
         if number_pads:
@@ -293,9 +298,11 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
         fid_tensor = torch.tensor([fid])
         fid_tensor = F.one_hot(fid_tensor.long(), num_classes = self.total_fidelities)
         fid_tensor = fid_tensor.reshape(1, -1).float()
-        
+        # input_af = (1, 105)
+        # fid_tensor = (1, 3)
         input_af = torch.cat((input_af, fid_tensor), dim = 1)
-
+        # input_af = (1, 108)
+        # sequence + eos + fidelity
         return input_af.to(self.device)[0]
 
     def project_max_fidelity(self, tensor_af):
@@ -338,22 +345,25 @@ class ProxyBotorch(Model):
             self.proxy.load_model(self.config.path.model_proxy)
         else:
             raise FileNotFoundError
+        # X.shape = (100, 1, 108)
         dim_input = X.dim()       
         self.proxy.model.train(mode = True)
         #print("input", X)
         with torch.no_grad():
-            outputs = torch.hstack([self.proxy.model(X) for _ in range(self.nb_samples)]).cpu().detach().numpy()
-            mean_1 = np.mean(outputs, axis = 1) 
+            outputs = torch.hstack([self.proxy.model(X) for _ in range(self.nb_samples)]).cpu().detach().numpy() #outputs = (100, 20, 1)
+            mean_1 = np.mean(outputs, axis = 1) #mean_1 = (100, 1)
             #print("mean_1", mean_1)
-            var_1 = np.var(outputs, axis = 1) 
+            var_1 = np.var(outputs, axis = 1) #var_1 = (100, 1)
             #print("std_1", std_1)
         #For the mean
         mean = torch.from_numpy(mean_1)
         #For the variance
         list_var = torch.from_numpy(var_1)
-        nb_inputs = list_var.shape[0]
-        nb_cofid = list_var.shape[1]
-        list_covar = [torch.diag(list_var[i, ...].view(nb_cofid)) for i in range(nb_inputs)]
+        # mean and list_var are just rounded off values of the mean and variance
+        # list_var.shape=(100, 1)
+        nb_inputs = list_var.shape[0] #100
+        nb_cofid = list_var.shape[1] #1
+        list_covar = [torch.diag(list_var[i, ...].view(nb_cofid)) for i in range(nb_inputs)] #list of 100 tensors
         covar= torch.stack(list_covar, 0)   
         #import pdb
         if dim_input == 3:

@@ -75,7 +75,7 @@ class Logger():
         return
 
 if __name__ == "__main__":
-    config_test_name = "config_test.yaml"
+    config_test_name = "/home/mila/n/nikita.saxena/original/ActiveLearningPipeline/config_test.yaml"
     al = ActiveLearning(config = config_test_name)
     al.run_pipeline()
 

@@ -5,10 +5,10 @@ al:
   queries_per_it: 100
 
 path :
-  data_oracle : "./storage/data_oracle/database.npy"
-  model_proxy : "./storage/model_proxy/proxy"
-  model_gfn : "./storage/model_gfn/gfn"
-  model_oracle_MLP : "./storage/model_oracle/oracle_MLP"
+  data_oracle : "/home/mila/n/nikita.saxena/original/ActiveLearningPipeline/storage/data_oracle/database.npy"
+  model_proxy : "/home/mila/n/nikita.saxena/original/ActiveLearningPipeline/storage/model_proxy/proxy"
+  model_gfn : "/home/mila/n/nikita.saxena/original/ActiveLearningPipeline/storage/model_gfn/gfn"
+  model_oracle_MLP : "/home/mila/n/nikita.saxena/original/ActiveLearningPipeline/storage/model_oracle/oracle_MLP"
 
 env:
   main : "aptamers"
