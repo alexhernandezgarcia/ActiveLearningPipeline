@@ -54,7 +54,6 @@ class Oracle:
         data["samples"] = samples
         data["energies"] = self.score(samples)
 
-        # print("initial data", data)
         if save:
             np.save(self.path_data, data)
         if return_data:
