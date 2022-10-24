@@ -363,8 +363,8 @@ class ProxyBotorch(Model):
         # list_var.shape=(100, 1)
         nb_inputs = list_var.shape[0] #100
         nb_cofid = list_var.shape[1] #1
-        # should it even be 100, or it should be 4 instead? like covariance between the different seuences so 
         # should be 100 only
+        # nb_cofid = 1
         list_covar = [torch.diag(list_var[i, ...].view(nb_cofid)) for i in range(nb_inputs)] #list of 100 tensors
         covar= torch.stack(list_covar, 0)   
         #import pdb
@@ -379,8 +379,9 @@ class ProxyBotorch(Model):
             #import pdb; pdb.set_trace()
             covar = covar.unsqueeze(1) 
         #print("mean input to mvn", mean.shape, "covar", covar.shape)
-
+        #  mean = (100, 1, 1) covar.shape=(100, 1, 1)
         mvn = MultivariateNormal(mean = mean.to(self.device), covariance_matrix = covar.to(self.device))
+        
         posterior = GPyTorchPosterior(mvn)
         
         return posterior
