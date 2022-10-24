@@ -26,7 +26,7 @@ class AcquisitionFunction:
     def init_acquisition(self):
         if self.config.acquisition.main == "proxy":
             self.acq = AcquisitionFunctionProxy(self.config, self.proxy)
-        elif self.config.acquisition.main == "MES":
+        elif self.config.acquisition.main.upper() == "MES":
             self.acq = AcquisitionFunctionMES(self.config, self.proxy)
         else:
             raise NotImplementedError
@@ -308,10 +308,10 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
         #tensor in af format and then put them to max fidelity for the proxy
         #useful format
         
-        nb_inputs = len(tensor_af)
+        nb_inputs = len(tensor_af) #(100, 1, 108)
         #isolate the non_fidelity part
      
-        tensor_af = tensor_af.view(nb_inputs, -1)
+        tensor_af = tensor_af.view(nb_inputs, -1) #(100, 108)
         inputs_without_fid = tensor_af[:, :-self.total_fidelities]
        
     
@@ -322,7 +322,7 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
 
         max_fids = max_fid.repeat(nb_inputs, 1)
         input_max_fid = torch.cat((inputs_without_fid, max_fids), dim = 1) 
-
+        # the shape returned is (100, 1, 108)
         return input_max_fid.to(self.device).view(nb_inputs, 1, -1)#[0]
 
 
@@ -363,6 +363,8 @@ class ProxyBotorch(Model):
         # list_var.shape=(100, 1)
         nb_inputs = list_var.shape[0] #100
         nb_cofid = list_var.shape[1] #1
+        # should it even be 100, or it should be 4 instead? like covariance between the different seuences so 
+        # should be 100 only
         list_covar = [torch.diag(list_var[i, ...].view(nb_cofid)) for i in range(nb_inputs)] #list of 100 tensors
         covar= torch.stack(list_covar, 0)   
         #import pdb
