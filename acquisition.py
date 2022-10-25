@@ -356,6 +356,10 @@ class ProxyBotorch(Model):
             var_1 = np.var(outputs, axis = 1) #var_1 = (100, 1)
             #print("std_1", std_1)
         #For the mean
+
+        # outputs_4dim = (6, 20, 2, 1)
+        # mean_4dim = (6, 2, 1)
+        # var_4dim = (6, 2, 1)
         mean = torch.from_numpy(mean_1)
         #For the variance
         list_var = torch.from_numpy(var_1)

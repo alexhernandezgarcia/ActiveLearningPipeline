@@ -530,7 +530,7 @@ class MLP(nn.Module):
 
         # TO LATENT
         x_latent = self.towards_latent_layer(x_before_fid)
-        x_latent = self.towards_latent_activation(x_latent)
+        x_latent = self.towards_latent_activation(x_latent) #(6, 1, 2, 200)
 
         # ADDING FID
         x_after_fid = torch.cat((x_latent, x_fid), dim=-1)
@@ -541,9 +541,9 @@ class MLP(nn.Module):
         for i in range(self.layers_after_fid):
             x_after_fid = self.lin_layers_after_fid[i](x_after_fid)
             x_after_fid = self.activations_after_fid[i](x_after_fid)
-            x_after_fid = self.dropouts_after_fid[i](x_after_fid)
+            x_after_fid = self.dropouts_after_fid[i](x_after_fid) #(6, 1, 2, 256)
             #x_after_fid = self.norms_after_fid[i](x_after_fid)
 
-        y = self.output_layer(x_after_fid)
+        y = self.output_layer(x_after_fid) #(6, 1, 2, 1)
 
         return y
