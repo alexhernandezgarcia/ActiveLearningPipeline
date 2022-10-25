@@ -78,7 +78,3 @@ if __name__ == "__main__":
     config_test_name = "/home/mila/n/nikita.saxena/ActiveLearningPipeline/config_test.yaml"
     al = ActiveLearning(config = config_test_name)
     al.run_pipeline()
-
-
-
-

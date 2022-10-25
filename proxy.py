@@ -516,8 +516,8 @@ class MLP(nn.Module):
         self.dropouts_after_fid = nn.ModuleList(self.dropouts_after_fid)
 
     def forward(self, x):
-        x_seq = x[..., : -self.total_fidelities]
-        x_fid = x[..., self.init_layer_depth :]  # +1 non convention python
+        x_seq = x[..., : -self.total_fidelities] #(12, 1, 2, 105)
+        x_fid = x[..., self.init_layer_depth :]  # +1 non convention python #(12, 1, 2, 3)
 
         # BEFORE FID
         x_before_fid = self.initial_activation(self.initial_layer(x_seq))
