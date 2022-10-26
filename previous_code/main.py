@@ -654,7 +654,7 @@ def process_config(config):
     # Comet: same project for AL and GFlowNet
     config.al.comet.project = config.comet_project
     if config.comet_project:
-        config.gflownet.comet.project = config.comet_project  
+        config.gflownet.comet.project = config.comet_project
     # sampling method - in case we forget to revert ensemble size
     if config.proxy.uncertainty_estimation == "dropout":
         config.proxy.ensemble_size = 1
