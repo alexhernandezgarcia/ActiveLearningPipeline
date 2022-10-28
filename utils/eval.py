@@ -1,8 +1,6 @@
 import torch 
 import numpy as np
 
-tf = lambda x: torch.FloatTensor(x).to(_dev[0])
-
 def logq(path_list, actions_list, model, env, device):
     # TODO: this method is probably suboptimal, since it may repeat forward calls for
     # the same nodes.

@@ -312,7 +312,7 @@ class GFlowNet:
             state = self.rng.permutation(self.buffer.train.samples.values)[0]
             state_manip = self.env.base2manip(state)
             env.done = True
-            env.state = state_manip
+            env.state = state_manip #array([1, 2, 3, 0, 1, 2, 3, 3, 3, 0, 3, 1, 3, 2, 4])
             env.last_action = self.env.token_eos
 
             while len(env.state) > 0:
@@ -499,17 +499,13 @@ class GFlowNet:
                 if sub_it == 0:
                     all_losses.append(loss.item())
 
-            if (it%self.test_period==0):
-                # and self.buffer.test is not None
+            if (it%self.test_period==0) and self.buffer.test is not None:
                 data_logq = []
-                for statestr, score in tqdm(
-                    zip(self.buffer.test.samples, self.buffer.test["energies"]),
-                    disable=self.test_period < 10,
-                ):
+                for statestr, score in tqdm(zip(self.buffer.test.samples.values, self.buffer.test["energies"]), disable=self.test_period < 10):
                     # t0_test_path = time.time()
                     path_list, actions = self.env.get_paths(
-                        [[self.env.readable2state(statestr)]],
-                        [[self.env.eos]],
+                        [self.env.base2manip(statestr).tolist()],
+                        [[self.env.token_eos]],
                     )
                     # t1_test_path = time.time()
                     # times["test_paths"] += t1_test_path - t0_test_path
