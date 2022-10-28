@@ -62,7 +62,7 @@ class EnvBase:
         raise NotImplementedError
 
     @abstractmethod
-    def get_parents(self, backward=False):
+    def get_parents(self, backward=False, state = None, done = None):
         """
         to build the training batch (for the inflows)
         """
@@ -86,7 +86,7 @@ class EnvBase:
         """
         current_path = path_list[-1].copy()
         current_path_actions = actions[-1].copy()
-        parents, parents_actions = self.get_parents(True)
+        parents, parents_actions = self.get_parents(state=list(current_path[-1]), done=False, backward=True)
         # parents = [self.obs2state(el).tolist() for el in parents]
         if parents == []:
             return path_list, actions
@@ -190,9 +190,14 @@ class EnvAptamers(EnvBase):
         else:
             return mask
 
-    def get_parents(self, backward=False):
-        if self.done:
-            if self.state[-1] == self.token_eos:
+    def get_parents(self, backward=False, state=None, done= None):
+        if state is None:
+            state = self.state.copy()
+        if done is None:
+            done = self.done
+
+        if done:
+            if state[-1] == self.token_eos:
                 parents_a = [self.token_eos]
                 parents = [self.state[:-1]]
                 if backward:
@@ -204,10 +209,9 @@ class EnvAptamers(EnvBase):
         else:
             parents = []
             actions = []
-            # is this code written to handle cases when the action is not just adding one nucleotide but perhaps adding a subsequence of nucleotides??
             for idx, a in enumerate(self.action_space):
-                if self.state[-len(a) :] == list(a):
-                    parents.append((self.state[: -len(a)]))
+                if state[-len(a) :] == list(a):
+                    parents.append((state[: -len(a)]))
                     actions.append(idx)
 
             return parents, actions
