@@ -181,6 +181,37 @@ class EnvAptamers(EnvBase):
 
             return parents, actions
 
+    def get_paths(self, path_list, actions):
+        """
+        Determines all paths leading to each state in path_list, recursively.
+        Args
+        ----
+        path_list : list
+            List of paths (lists)
+        actions : list
+            List of actions within each path
+        Returns
+        -------
+        path_list : list
+            List of paths (lists)
+        actions : list
+            List of actions within each path
+        """
+        current_path = path_list[-1].copy()
+        current_path_actions = actions[-1].copy()
+        parents, parents_actions = self.get_parents(list(current_path[-1]), False)
+        # parents = [self.obs2state(el).tolist() for el in parents]
+        if parents == []:
+            return path_list, actions
+        for idx, (p, a) in enumerate(zip(parents, parents_actions)):
+            if idx > 0:
+                path_list.append(current_path)
+                actions.append(current_path_actions)
+            path_list[-1] += [p]
+            actions[-1] += [a]
+            path_list, actions = self.get_paths(path_list, actions)
+        return path_list, actions
+
     def step(self, action):
         valid = False
         seq = self.state

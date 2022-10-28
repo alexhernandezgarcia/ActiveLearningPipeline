@@ -61,6 +61,8 @@ gflownet:
     lr_decay_period : 1.0e+6
     lr_decay_gamma : 0.75
     ttsr : 3
+  test:
+    period: 100
 
 acquisition:
   main: "proxy"

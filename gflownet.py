@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import os
 from abc import abstractmethod
+from utils.eval import logq
 
 # Utils function for the whole file, fixed once and for all
 global tf_list, tl_list, to, _dev
@@ -56,6 +57,7 @@ class GFlowNet:
 
         self.loginf = tf_list([1e6])
         self.buffer = Buffer(self.config)
+        self.test_period = self.config.gflownet.test.period
 
     def load_hyperparameters(self):
         self.flowmatch_eps = tf_list([self.config.gflownet.loss.flowmatch_eps])
@@ -396,9 +398,12 @@ class GFlowNet:
         rewards = self.env.get_reward(input_reward, done)
         terminal_states = rewards[rewards != 0]
         # mean of just the terminal states
-        self.logger.log_metric("rewards", np.mean(terminal_states))
+        self.logger.log_metric("mean_reward", np.mean(terminal_states))
+        self.logger.log_metric("max_reward", np.max(terminal_states))
         proxy_vals = self.env.reward2acq(terminal_states)
-        self.logger.log_metric("proxy_vals", np.mean(proxy_vals))
+        self.logger.log_metric("mean_proxy_score", np.mean(proxy_vals))
+        self.logger.log_metric("min_proxy_score", np.min(proxy_vals))
+        self.logger.log_metric("max_proxy_score", np.max(proxy_vals))
         rewards = [tf_list([r]) for r in rewards]
         done = [tl_list([d]) for d in done]
 
@@ -493,6 +498,28 @@ class GFlowNet:
 
                 if sub_it == 0:
                     all_losses.append(loss.item())
+
+            if (it%self.test_period==0):
+                # and self.buffer.test is not None
+                data_logq = []
+                for statestr, score in tqdm(
+                    zip(self.buffer.test.samples, self.buffer.test["energies"]),
+                    disable=self.test_period < 10,
+                ):
+                    # t0_test_path = time.time()
+                    path_list, actions = self.env.get_paths(
+                        [[self.env.readable2state(statestr)]],
+                        [[self.env.eos]],
+                    )
+                    # t1_test_path = time.time()
+                    # times["test_paths"] += t1_test_path - t0_test_path
+                    # t0_test_logq = time.time()
+                    data_logq.append(logq(path_list, actions, self.model, self.env, self.device))
+                    # t1_test_logq = time.time()
+                    # times["test_logq"] += t1_test_logq - t0_test_logq
+                corr = np.corrcoef(data_logq, self.buffer.test["energies"])
+                self.logger.log_metric("test_corr_logq_score", corr[0, 1])
+                self.logger.log_metric("test_mean_logq", np.mean(data_logq))
 
         # save model
         path = self.path_model
