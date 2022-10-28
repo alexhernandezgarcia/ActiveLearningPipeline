@@ -62,7 +62,7 @@ class EnvBase:
         raise NotImplementedError
 
     @abstractmethod
-    def get_parents(self, backward=False, state = None, done = None):
+    def get_parents(self, backward=False, state=None, done=None):
         """
         to build the training batch (for the inflows)
         """
@@ -86,7 +86,9 @@ class EnvBase:
         """
         current_path = path_list[-1].copy()
         current_path_actions = actions[-1].copy()
-        parents, parents_actions = self.get_parents(state=list(current_path[-1]), done=False, backward=True)
+        parents, parents_actions = self.get_parents(
+            state=list(current_path[-1]), done=False, backward=True
+        )
         # parents = [self.obs2state(el).tolist() for el in parents]
         if parents == []:
             return path_list, actions
@@ -190,7 +192,7 @@ class EnvAptamers(EnvBase):
         else:
             return mask
 
-    def get_parents(self, backward=False, state=None, done= None):
+    def get_parents(self, backward=False, state=None, done=None):
         if state is None:
             state = self.state.copy()
         if done is None:

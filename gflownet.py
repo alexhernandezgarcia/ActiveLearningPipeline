@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import os
 from abc import abstractmethod
+
 # from utils.eval import logq
 
 # Utils function for the whole file, fixed once and for all
@@ -312,7 +313,9 @@ class GFlowNet:
             state = self.rng.permutation(self.buffer.train.samples.values)[0]
             state_manip = self.env.base2manip(state)
             env.done = True
-            env.state = state_manip #array([1, 2, 3, 0, 1, 2, 3, 3, 3, 0, 3, 1, 3, 2, 4])
+            env.state = (
+                state_manip  # array([1, 2, 3, 0, 1, 2, 3, 3, 3, 0, 3, 1, 3, 2, 4])
+            )
             env.last_action = self.env.token_eos
 
             while len(env.state) > 0:
@@ -499,9 +502,12 @@ class GFlowNet:
                 if sub_it == 0:
                     all_losses.append(loss.item())
 
-            if (it%self.test_period==0) and self.buffer.test is not None:
+            if (it % self.test_period == 0) and self.buffer.test is not None:
                 data_logq = []
-                for statestr, score in tqdm(zip(self.buffer.test.samples.values, self.buffer.test["energies"]), disable=self.test_period < 10):
+                for statestr, score in tqdm(
+                    zip(self.buffer.test.samples.values, self.buffer.test["energies"]),
+                    disable=self.test_period < 10,
+                ):
                     # t0_test_path = time.time()
                     # in the previous code, readable2state returns a list, so i first convert the output from base2manip
                     # into a list and then feed it in as it is done in the previous code. Plus readable2state does not append the eos
@@ -513,7 +519,9 @@ class GFlowNet:
                     # t1_test_path = time.time()
                     # times["test_paths"] += t1_test_path - t0_test_path
                     # t0_test_logq = time.time()
-                    data_logq.append(self.logq(path_list, actions, self.model, self.env, self.device))
+                    data_logq.append(
+                        self.logq(path_list, actions, self.model, self.env, self.device)
+                    )
                     # t1_test_logq = time.time()
                     # times["test_logq"] += t1_test_logq - t0_test_logq
                 corr = np.corrcoef(data_logq, self.buffer.test["energies"])
@@ -574,34 +582,33 @@ class GFlowNet:
             ).view(1, -1)
             input_policy = torch.cat((input_policy, padding), dim=1)
 
-        return to(input_policy)[0] #(1, 105)
+        return to(input_policy)[0]  # (1, 105)
 
     def logq(self, path_list, actions_list, model, env, device):
         log_q = torch.tensor(1.0)
         for path, actions in zip(path_list, actions_list):
-            path = path[::-1] #REVERSES THE LIST, so empty list at the top
+            path = path[::-1]  # REVERSES THE LIST, so empty list at the top
             actions = actions[::-1]
             path_ohe = torch.stack(list(map(self.manip2policy, path)))
             # path = np.array(path)
             path_len = len(path)
-            mask=None
+            mask = None
 
-        # path_obs = np.asarray([env.state2obs(state) for state in path])
+            # path_obs = np.asarray([env.state2obs(state) for state in path])
             with torch.no_grad():
-            # TODO: potentially mask invalid actions next_q
+                # TODO: potentially mask invalid actions next_q
                 logits_path = model(path_ohe)
             logsoftmax = torch.nn.LogSoftmax(dim=1)
             logprobs_path = logsoftmax(logits_path)
             log_q_path = torch.tensor(0.0)
             for s, a, logprobs in zip(*[path, actions, logprobs_path]):
                 log_q_path = log_q_path + logprobs[a]
-        # Accumulate log prob of path
+            # Accumulate log prob of path
             if torch.le(log_q, 0.0):
                 log_q = torch.logaddexp(log_q, log_q_path)
             else:
                 log_q = log_q_path
         return log_q.item()
-    
 
 
 """
@@ -611,7 +618,7 @@ Utils Buffer
 
 class Buffer:
     """
-    Buffer of data : 
+    Buffer of data :
     - loads the data from oracle and put the best ones as offline training data
     - maintains a replay buffer composed of the best trajectories sampled for training
     """
