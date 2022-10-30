@@ -13,7 +13,7 @@ import warnings
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)  # annoying numpy error
 
-
+#All of this is replaced by a config.yaml, more visual. To be eventually replaced with Hydra.
 def add_args(parser):
     """
     Adds command-line arguments to parser

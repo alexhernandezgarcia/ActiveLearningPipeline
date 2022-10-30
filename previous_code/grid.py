@@ -7,7 +7,7 @@ import pandas as pd
 from scipy.stats import norm
 from gflownetenv import GFlowNetEnv
 
-
+#Most comments are in gflownetenv.py
 class Grid(GFlowNetEnv):
     """
     Hyper-grid environment

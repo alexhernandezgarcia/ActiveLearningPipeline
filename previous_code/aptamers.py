@@ -8,7 +8,7 @@ from gflownetenv import GFlowNetEnv
 from oracle import numbers2letters
 import time
 
-
+#Most comments are already in gflownetenv.py
 class AptamerSeq(GFlowNetEnv):
     """
     Aptamer sequence environment
