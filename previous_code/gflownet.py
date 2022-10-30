@@ -309,6 +309,7 @@ class GFlowNetAgent:
         if args.gflownet.loss in ["flowmatch"]:
             self.loss = "flowmatch"
             self.Z = None
+        #TODO : implement trajectory balance loss
         elif args.gflownet.loss in ["trajectorybalance", "tb"]:
             self.loss = "trajectorybalance"
             self.Z = nn.Parameter(torch.ones(64) * 150.0 / 64)
@@ -350,6 +351,7 @@ class GFlowNetAgent:
         else:
             raise NotImplemented
         # Environment
+        #For more visibility, the environment is initialized right in activelearning.py
         if self.env_id == "aptamers":
             self.env = AptamerSeq(
                 args.gflownet.max_seq_length,
@@ -409,6 +411,7 @@ class GFlowNetAgent:
         if self.test_period in [None, -1]:
             self.test_period = np.inf
         # Train set statistics
+        # We don't implement the Buffer statistics yet
         if self.buffer.train is not None:
             min_energies_tr = self.buffer.train["energies"].min()
             max_energies_tr = self.buffer.train["energies"].max()
@@ -522,6 +525,7 @@ class GFlowNetAgent:
             with torch.no_grad():
                 action_logits = model(tf(states))
             action_logits /= temperature
+        #Mixt policy : so far it is only either all environments are updated with "model" either with "uniform".
         elif policy == "uniform":
             action_logits = tf(np.zeros(len(states)), len(self.env.action_space) + 1)
         else:
@@ -801,7 +805,7 @@ class GFlowNetAgent:
                 b.data.mul_(1 - self.tau).add_(self.tau * a)
 
         return loss, term_loss, flow_loss
-
+    #TODO : to be implemented
     def trajectorybalance_loss(self, it, batch):
         """
         Computes the trajectory balance loss of a batch
@@ -844,7 +848,7 @@ class GFlowNetAgent:
         # Trajectory balance loss
         loss = (self.Z.sum() + sumlogprobs - torch.log((rewards))).pow(2).mean()
         return loss, loss, loss
-
+    #Not implemented yet because we don't do filtering / duplicate removal
     def unpack_terminal_states(self, batch):
         paths = [[] for _ in range(self.mbsize)]
         states = [None] * self.mbsize
@@ -904,6 +908,7 @@ class GFlowNetAgent:
                     self.opt.zero_grad()
                     all_losses.append([i.item() for i in losses])
             # Buffer
+            #we don't have all the following statistics so far
             states_term, paths_term, rewards = self.unpack_terminal_states(batch)
             proxy_vals = self.env.reward2proxy(rewards)
             self.buffer.add(states_term, paths_term, rewards, proxy_vals, it)
@@ -1090,7 +1095,7 @@ class GFlowNetAgent:
         if self.comet and self.al_iter == -1:
             self.comet.end()
 
-
+#Not currently implemented or used (because we don't implement fancy statistics probably)
 def batch2dict(batch, env, get_uncertainties=False, query_function="Both"):
     batch = np.asarray(env.state2oracle(batch))
     t0_proxy = time.time()
@@ -1114,7 +1119,7 @@ def batch2dict(batch, env, get_uncertainties=False, query_function="Both"):
     }
     return samples, times
 
-
+#TODO : once the pipeline overall runs, implement some alternative to benchmark like the RandomTrajAgent
 class RandomTrajAgent:
     def __init__(self, args, envs):
         self.mbsize = args.gflownet.mbsize  # mini-batch size
@@ -1150,7 +1155,7 @@ class RandomTrajAgent:
     def flowmatch_loss(self, it, batch):
         return None
 
-
+#This does not allow for many types of Policy Networks. Make some class for each type of Policy Network instead.
 def make_mlp(layers_dim, act=nn.LeakyReLU(), tail=[]):
     """
     Defines an MLP with no top layer activation
@@ -1268,7 +1273,7 @@ def main(args):
     )
     samples, times = batch2dict(batch, gflownet_agent.env, get_uncertainties=False)
 
-
+#TODO : being able to call the GFlowNet + Env pipeline alone (without a proxy, directly with the ground-truth oracle as reward)
 if __name__ == "__main__":
     parser = ArgumentParser()
     _, override_args = parser.parse_known_args()

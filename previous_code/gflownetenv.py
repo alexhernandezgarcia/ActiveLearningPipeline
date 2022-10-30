@@ -61,7 +61,7 @@ class GFlowNetEnv:
         self.reward_norm = reward_norm
 
     def get_actions_space(self):
-        #For Multi-Fidelity, it will be useful to maybe define a dictionnary of the actions_space : with the "DNA actions" / "eos action" / "fidelity action" and their correspondance in the action space (enumeration)
+        #For Multi-Fidelity, it will be useful to define a dictionnary of the actions_space : with the "DNA actions" / "eos action" / "fidelity action" and their correspondance in the action space (enumeration)
         """
         Constructs list with all possible actions (excluding end of sequence)
         """
@@ -93,7 +93,7 @@ class GFlowNetEnv:
         reward = np.zeros(len(done))
         reward[list(done)] = self.proxy2reward(self.proxy(self.state2oracle(states)))
         return reward
-    #Idea : we could make these acq2reward function specific to each acquisition function ! it would be a property method of each acquisition function class
+    #Idea TODO : we could make this acq2reward function specific to each acquisition function ! it would be a property method of each acquisition function class
     def proxy2reward(self, proxy_vals):
         """
         Prepares the output of an oracle for GFlowNet: the inputs proxy_vals is
@@ -112,7 +112,7 @@ class GFlowNetEnv:
                 self.min_reward,
                 None,
             )
-        #TODO : in config_test.yaml, add those parameters. Make the config more structured
+        #TODO : in config_test.yaml, add those parameters (reward_beta, etc...) Make the config more structured
         elif self.reward_func == "boltzmann":
             return np.clip(
                 np.exp(-1.0 * self.reward_beta * proxy_vals),

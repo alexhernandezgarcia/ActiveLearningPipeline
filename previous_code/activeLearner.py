@@ -21,7 +21,7 @@ class ActiveLearning():
         self.pipeIter = None
         self.homedir = os.getcwd()
         #an episode is a round of the whole Active Learning pipeline. So far we only perform the pipeline once when calling the code, so no episode.
-        #TODO : do we want to run multiple times of the AL pipeline automatically ? or the future implementation of Hydra will solve that ?
+        #TODO : do we want to run multiple times the AL pipeline automatically ? or the future implementation of Hydra will solve that ?
         self.episode = 0
         self.config = config
         #self.runNum serves to identify the run in the comet logger and in the working directory where some data is stored locally. To be incorporated in the logger ?
