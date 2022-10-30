@@ -31,7 +31,7 @@ config
 'dataset' - name of dataset to be saved
 '''
 
-
+#Just like for the Proxy, we break this big class into a BaseClass and one subclass for each oracle for more modularity and smaller specific classes
 class Oracle():
     def __init__(self, seed, seq_len, dict_size, min_len, max_len, oracle,
             variable_len=True, init_len=0, energy_weight=False, nupack_target_motif="",
@@ -56,7 +56,7 @@ class Oracle():
         if not 'nupack' in self.oracle:
             self.initRands() # initialize random numbers for hand-made oracles
 
-
+    #Instead of initializing all parameters for all oracles, we do so in each dedicated child Class
     def initRands(self):
         '''
         initialize random numbers for custom-made toy functions
@@ -100,7 +100,7 @@ class Oracle():
         gamma = np.random.randint(0, int(n * (n - 1 ) / 2))
         self.mu, self.v, self.m, self.n, self.gamma = [mu, v, m, n, gamma]
 
-
+    #This single general way of generating an random initial dataset can be precised for every oracle in the dedicated class in main-new-al.
     def initializeDataset(self,save = True, returnData = False, customSize=None,
             custom_seed=None):
         '''
@@ -208,7 +208,7 @@ class Oracle():
         else:
             raise NotImplementedError("Unknown oracle type")
 
-
+    #All the following oracle-specific methods are implemented one by one in each relevant class ! 
     def BB_DOB_functions(self, queries):
         '''
         BB-DOB OneMax benchmark

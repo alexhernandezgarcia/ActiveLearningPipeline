@@ -51,7 +51,7 @@ class GFlowNetEnv:
         assert self.reward_norm > 0
         assert self.reward_beta > 0
         assert self.min_reward > 0
-    
+ 
     def set_energies_stats(self, energies_stats):
         #Not implemented so far. In this previous_code, only used to "denormalize" proxy values (see proxy2reward) : in which case, for what ? 
         self.energies_stats = energies_stats
