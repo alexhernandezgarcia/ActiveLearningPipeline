@@ -51,14 +51,17 @@ class GFlowNetEnv:
         assert self.reward_norm > 0
         assert self.reward_beta > 0
         assert self.min_reward > 0
-
+    
     def set_energies_stats(self, energies_stats):
+        #Not implemented so far. In this previous_code, only used to "denormalize" proxy values (see proxy2reward) : in which case, for what ? 
         self.energies_stats = energies_stats
 
     def set_reward_norm(self, reward_norm):
+        #Not implemented so far. In this previous_code, only called in the "power" proxy2reward function, but set to 1 by default so no effect. Use to be discussed.
         self.reward_norm = reward_norm
 
     def get_actions_space(self):
+        #For Multi-Fidelity, it will be useful to maybe define a dictionnary of the actions_space : with the "DNA actions" / "eos action" / "fidelity action" and their correspondance in the action space (enumeration)
         """
         Constructs list with all possible actions (excluding end of sequence)
         """
@@ -68,7 +71,8 @@ class GFlowNetEnv:
         self,
     ):
         return 1
-
+    #Weird name, because it is used to prepare a state to feed to the proxy. Actually used to prepare for acquisition function computation.
+    #As the acquisition function computation is done with the proxy (and the preprocess function specified in the proxy), with just need to pass a state in the "base format" to the acquisition class.
     def state2oracle(self, state_list):
         """
         Prepares a list of states in "GFlowNet format" for the oracle
@@ -79,7 +83,8 @@ class GFlowNetEnv:
             List of states.
         """
         return state_list
-
+    #Not general enough, since this only implement the reward with Acquisition Function == Proxy. More modularity calling AcquisitionFunction class.
+    #self.proxy2reward is still legitimate even if the acquisition function is not proxy-related ? (eg MES)
     def reward_batch(self, states, done):
         """
         Computes the rewards of a batch of states, given a list of states and 'dones'
@@ -88,7 +93,7 @@ class GFlowNetEnv:
         reward = np.zeros(len(done))
         reward[list(done)] = self.proxy2reward(self.proxy(self.state2oracle(states)))
         return reward
-
+    #Idea : we could make these acq2reward function specific to each acquisition function ! it would be a property method of each acquisition function class
     def proxy2reward(self, proxy_vals):
         """
         Prepares the output of an oracle for GFlowNet: the inputs proxy_vals is
@@ -98,6 +103,7 @@ class GFlowNetEnv:
         strictly positive reward - provided self.reward_norm and self.reward_beta are
         positive - and larger than self.min_reward.
         """
+        #When should we perform this ? and why ?
         if self.denorm_proxy:
             proxy_vals = proxy_vals * self.energies_stats[3] + self.energies_stats[2]
         if self.reward_func == "power":
@@ -106,6 +112,7 @@ class GFlowNetEnv:
                 self.min_reward,
                 None,
             )
+        #TODO : in config_test.yaml, add those parameters. Make the config more structured
         elif self.reward_func == "boltzmann":
             return np.clip(
                 np.exp(-1.0 * self.reward_beta * proxy_vals),
@@ -114,7 +121,7 @@ class GFlowNetEnv:
             )
         else:
             raise NotImplemented
-
+    #Similar comments as for proxy2reward : to be rather renamed reward2acq and to be specified in each acquisition function subclass ?
     def reward2proxy(self, reward):
         """
         Converts a "GFlowNet reward" into a (negative) energy or values as returned by
@@ -129,7 +136,7 @@ class GFlowNetEnv:
             return -1.0 * np.log(reward) / self.reward_beta
         else:
             raise NotImplemented
-
+    #This is called manip2policy in the new code. This previous_code does not distinguish the base format and the manip format (indeed they are quite similar, expect that I added the eos action in the manip format for conveniency.)
     def state2obs(self, state=None):
         """
         Converts a state into a format suitable for a machine learning model, such as a
@@ -138,14 +145,14 @@ class GFlowNetEnv:
         if state is None:
             state = self.state
         return state
-
+    #Do we actually need to convert a one-hot-encoding representation to a state in the pipeline ? This would be useless if the get_parent function outputs a manip_format instead of a one-hot-encoding format. (more coherent)
     def obs2state(self, obs):
         """
         Converts the model (e.g. one-hot encoding) version of a state given as
         argument into a state.
         """
         return obs
-
+    #Not implemented yet, because the Buffer is not needing it for now. It should indeed be defined in the env class and not the Buffer for more modularity.
     def state2readable(self, state=None):
         """
         Converts a state into human-readable representation.
@@ -153,7 +160,7 @@ class GFlowNetEnv:
         if state is None:
             state = self.state
         return str(state)
-
+    #same as for readable2state
     def readable2state(self, readable):
         """
         Converts a human-readable representation of a state into the standard format.
@@ -206,7 +213,7 @@ class GFlowNetEnv:
             parents = []
             actions = []
         return parents, actions
-
+    #Implemented By Nikita for the correlation statistics
     def get_paths(self, path_list, actions):
         """
         Determines all paths leading to each state in path_list, recursively.
@@ -241,7 +248,7 @@ class GFlowNetEnv:
             actions[-1] += [a]
             path_list, actions = self.get_paths(path_list, actions)
         return path_list, actions
-
+    #This general step function is not valid for multifidelity, to be specified in each environment class
     def step(self, action):
         """
         Executes step given an action.
@@ -268,7 +275,7 @@ class GFlowNetEnv:
             valid = True
             self.n_actions += 1
         return self.state, action, valid
-
+    #Insted of doing a specific mask function for each type of invalid action, we can do a general get_mask method that would do the same, but all at once
     def no_eos_mask(self, state=None):
         """
         Returns True if no eos action is allowed given state
@@ -294,7 +301,7 @@ class GFlowNetEnv:
         self.state = state
         self.done = done
         return self
-
+    #Not sure where it is used
     def true_density(self):
         """
         Computes the reward density (reward / sum(rewards)) of the whole space
@@ -307,7 +314,7 @@ class GFlowNetEnv:
           - states
         """
         return (None, None, None)
-
+    #To be rather put in the Buffer ? 
     def make_train_set(self, ntrain, oracle=None, seed=168, output_csv=None):
         """
         Constructs a randomly sampled train set.
@@ -340,7 +347,7 @@ class GFlowNetEnv:
         """
         return None
 
-
+#This Buffer class is good inspiration to implement a complex Buffer in main-new-al. So far the Buffer is really simple in main-new-al.
 class Buffer:
     """
     Implements the functionality to manage various buffers of data: the records of
