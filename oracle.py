@@ -362,10 +362,6 @@ class OracleNupack(OracleBase):
         #     motif_distance = binaryDistance(np.concatenate((padded_motif,padded_strings),axis=0), pairwise=True)[0,1:] # the first element is the motif we are looking for - take everything after this
         #     dict_return.update({"motif": motif_distance - 1}) # result is normed on 0-1, so dist-1 gives scaling from 0(bad) to -1(good)
 
-        # if energy_weighting:
-        #     for key in dict_return.keys():
-        #         if key != 'energy':
-        #             dict_return[key] = dict_return[key] * np.tanh(np.abs(energies)/2) # positive tahn of the energies, scaled
 
         if isinstance(returnFunc, list):
             if len(returnFunc) > 1:
