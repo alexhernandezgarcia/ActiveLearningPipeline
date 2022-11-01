@@ -18,7 +18,7 @@ class AcquisitionFunction:
         self.init_acquisition()
 
     def init_acquisition(self):
-        # so far, only proxy acquisition function has been implemented, only add new acquisition class inheriting from AcquisitionFunctionBase to innovate
+
         if self.config.acquisition.main == "proxy":
             self.acq = AcquisitionFunctionProxy(self.config, self.proxy)
         else:
@@ -45,8 +45,6 @@ class AcquisitionFunctionBase:
         self.proxy = proxy
         self.device = self.config.device
 
-        # the specific class of the exact AF is instantiated here
-
     @abstractmethod
     def load_best_proxy(self):
         """
@@ -54,8 +52,8 @@ class AcquisitionFunctionBase:
         """
         if os.path.exists(self.config.path.model_proxy):
             self.proxy.load_model(self.config.path.model_proxy)
-
         else:
+            print("The best proxy could be loaded !")
             raise FileNotFoundError
 
     @abstractmethod
@@ -78,7 +76,7 @@ class AcquisitionFunctionProxy(AcquisitionFunctionBase):
     def load_best_proxy(self):
         super().load_best_proxy()
 
-    def get_reward_batch(self, inputs_af_base):  # inputs_af = list of ...
+    def get_reward_batch(self, inputs_af_base):
         super().get_reward_batch(inputs_af_base)
 
         inputs_af = list(map(torch.tensor, inputs_af_base))

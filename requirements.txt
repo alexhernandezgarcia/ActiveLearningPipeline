@@ -104,6 +104,7 @@ Twisted==21.7.0
 typed-ast==1.4.3
 typing-extensions==3.10.0.0
 urllib3==1.26.6
+wandb
 wcwidth==0.2.5
 webencodings==0.5.1
 websocket-client==1.2.1
