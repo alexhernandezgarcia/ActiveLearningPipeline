@@ -75,6 +75,7 @@ class EnvBase:
         """
         raise NotImplementedError
 
+    #TODO: make it specific to each acquisition function rather 
     @abstractmethod
     def acq2rewards(self, acq_values):
         """
@@ -107,6 +108,7 @@ class EnvAptamers(EnvBase):
         self.n_alphabet = self.config.env.dict_size
         self.action_space = self.get_action_space()
         self.token_eos = self.get_token_eos(self.action_space)
+        #Are these parameters (for boltzman and power) environment specific or acquisition function specific ? 
         self.min_reward = 1e-8
         self.reward_beta = 4
         self.reward_norm = 1.0
@@ -218,6 +220,7 @@ class EnvAptamers(EnvBase):
 
     def acq2reward(self, acq_values):
         """
+        This was originally implemented in the case when the acquisition function is the proxy or UCB. In the general case, should be moved to the acquisition function class  ?
         Prepares the output of an oracle for GFlowNet: the inputs proxy_vals is
         expected to be a negative value (energy), unless self.denorm_proxy is True. If
         the latter, the proxy values are first de-normalized according to the mean and
