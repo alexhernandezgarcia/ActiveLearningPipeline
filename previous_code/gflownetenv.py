@@ -38,6 +38,7 @@ class GFlowNetEnv:
             self.proxy = proxy
         else:
             self.proxy = self.oracle
+        # replaced by get_reward() in main-new-al as we need to invoke acquisition too
         self.reward = (
             lambda x: [0]
             if not self.done
@@ -172,7 +173,7 @@ class GFlowNetEnv:
         Converts a path into a human-readable string.
         """
         return str(path).replace("(", "[").replace(")", "]").replace(",", "")
-
+    # Same as init_env in main-new-al
     def reset(self, env_id=None):
         """
         Resets the environment.
