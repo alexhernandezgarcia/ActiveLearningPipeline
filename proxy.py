@@ -25,7 +25,7 @@ class Proxy:
         self.init_proxy()
 
     def init_proxy(self):
-        # for now only the MLP proxy is implemented, but another class inheriting from ProxyBase has to be created for another proxy (transformer, ...)
+
         if self.config.proxy.model.lower() == "mlp":
             self.proxy = ProxyMLP(self.config, self.logger)
         elif self.config.proxy.model.lower() == "lstm":
@@ -38,7 +38,6 @@ class Proxy:
     def train(self):
         self.data_handler = BuildDataset(self.config, self.proxy)
         self.proxy.converge(self.data_handler)
-        return
 
 
 """
@@ -160,12 +159,6 @@ class ProxyBase:
 
             self.epochs += 1
 
-            # TODO : implement comet logger (with logger object in activelearning.py)
-            # if self.converged == 1:
-            #     self.statistics.log_comet_proxy_training(
-            #         self.err_tr_hist, self.err_te_hist
-            #     )
-
     @abstractmethod
     def train(self, tr):
         """
@@ -201,7 +194,6 @@ class ProxyBase:
         targets = data[1]
         inputs = inputs.to(self.device)
         targets = targets.to(self.device)
-        # output = self.model(inputs.float())
         output = self.model(inputs)
         loss = F.mse_loss(output[:, 0], targets.float())
         return loss
@@ -215,7 +207,7 @@ class ProxyBase:
         if all(
             np.asarray(self.err_te_hist[-history + 1 :]) > self.err_te_hist[-history]
         ):  # early stopping
-            self.converged = 1  # not a legitimate criteria to stop convergence ...
+            self.converged = 1
             print(
                 "Model converged after {} epochs - test loss increasing at {:.4f}".format(
                     self.epochs + 1, min(self.err_te_hist)
@@ -274,7 +266,6 @@ In the child Classes, the previous abstract methods can be overwritten. In what 
 - the Network is precised
 - The conversion format is given for its input
 """
-
 
 class ProxyMLP(ProxyBase):
     def __init__(self, config, logger, init_model=False):
