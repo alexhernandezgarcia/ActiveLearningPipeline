@@ -112,6 +112,8 @@ class OracleMLP(OracleBase):
         # parameters useful for the format of this custom trained MLP
         self.dict_size = self.config.env.dict_size
         self.max_len_mlp = 40  # this MLP was trained with seqs of len max 40
+        if self.config.env.max_len > self.max_len_mlp:
+            raise ValueError("The MLP toy oracle can only be called with sequences of max len 40")
         self.path_oracle_mlp = self.config.path.model_oracle_MLP
         self.device = torch.device(self.config.device)
 
@@ -183,7 +185,7 @@ class OracleMLP(OracleBase):
             raise NotImplementedError
 
         self.model.eval()
-        outputs = self.model(tensor4oracle)
+        outputs = - self.model(tensor4oracle) #This MLP toy oracle was trained on the opposite of Nupack energies, so we revert to negative energies with "-"
 
         return outputs.squeeze(1).tolist()
 
@@ -223,7 +225,7 @@ class OracleToy(OracleBase):
         return seq
 
     def get_score(self, queries):
-        count_zero = lambda x: float(np.count_nonzero(x == 1))
+        count_zero = lambda x: - float(np.count_nonzero(x == 1)) #Toy energy : opposite of the number of 1 ie T in the DNA sequence.
         outputs = list(map(count_zero, queries))
         return outputs
 
@@ -279,12 +281,9 @@ class OracleNupack(OracleBase):
         return letters
 
     def get_score(
-        self, queries, returnFunc="energy"
-    ):  # We kept all Nupack features and only decommented the energy one
-        """
-        IMPORTANT : current implementation below with the commentaries correspond to the raw code in the oracle.py of the previous code.
-        So far we commented the rest because we only focus on "energy" nupack reward function.
-        """
+        self, queries, returnFunc = "energy"
+    ): 
+        #so far only the energy stats is implemented, the others require adding many parameters (Motif, ...) to be discussed
 
         temperature = 310.0  # Kelvin
         ionicStrength = 1.0  # molar
@@ -292,11 +291,7 @@ class OracleNupack(OracleBase):
         sequences = list(map(self.base2oracle, queries))
 
         energies = np.zeros(len(sequences))
-        # nPins = np.zeros(len(sequences)).astype(int)
-        # nPairs = 0
-        # ssStrings = np.zeros(len(sequences), dtype=object)
-
-        # parallel evaluation - fast
+        
         strandList = []
         comps = []
         i = -1
@@ -312,58 +307,17 @@ class OracleNupack(OracleBase):
         results = complex_analysis(set, model=model1, compute=["mfe"])
 
         for i in range(len(energies)):
-            energies[i] = -results[comps[i]].mfe[0].energy
-            # ssStrings[i] = str(results[comps[i]].mfe[0].structure)
-
+            energies[i] = results[comps[i]].mfe[0].energy
+    
         dict_return = {}
-        # if 'pins' in returnFunc:
-        #     for i in range(len(ssStrings)):
-        #         indA = 0  # hairpin completion index
-        #         for j in range(len(sequences[i])):
-        #             if ssStrings[i][j] == '(':
-        #                 indA += 1
-        #             elif ssStrings[i][j] == ')':
-        #                 indA -= 1
-        #                 if indA == 0:  # if we come to the end of a distinct hairpin
-        #                     nPins[i] += 1
-        #     dict_return.update({"pins": -nPins})
-        # if 'pairs' in returnFunc:
-        #     nPairs = np.asarray([ssString.count('(') for ssString in ssStrings]).astype(int)
-        #     dict_return.update({"pairs": -nPairs})
+     
         if "energy" in returnFunc:
             dict_return.update(
                 {"energy": energies}
-            )  # this is already negative by construction in nupack
-
-        # if 'open loop' in returnFunc:
-        #     biggest_loop = np.zeros(len(ssStrings))
-        #     for i in range(len(ssStrings)):  # measure all the open loops and return the largest
-        #         loops = [0] # size of loops
-        #         counting = 0
-        #         indA = 0
-        #         # loop completion index
-        #         for j in range(len(sequences[i])):
-        #             if ssStrings[i][j] == '(':
-        #                 counting = 1
-        #                 indA = 0
-        #             if (ssStrings[i][j] == '.') and (counting == 1):
-        #                 indA += 1
-        #             if (ssStrings[i][j] == ')') and (counting == 1):
-        #                 loops.append(indA)
-        #                 counting = 0
-        #         biggest_loop[i] = max(loops)
-        #     dict_return.update({"open loop": -biggest_loop})
-
-        # if 'motif' in returnFunc: # searches for a particular fold NOTE searches for this exact aptamer, not subsections or longer sequences with this as just one portion
-        #     #'((((....))))((((....))))....(((....)))'
-        #     # pad strings up to max length for binary distance calculation
-        #     padded_strings = bracket_dot_to_num(ssStrings, maxlen=self.max_len)
-        #     padded_motif = np.expand_dims(bracket_dot_to_num([motif,motif], maxlen=self.max_len)[0],0)
-        #     motif_distance = binaryDistance(np.concatenate((padded_motif,padded_strings),axis=0), pairwise=True)[0,1:] # the first element is the motif we are looking for - take everything after this
-        #     dict_return.update({"motif": motif_distance - 1}) # result is normed on 0-1, so dist-1 gives scaling from 0(bad) to -1(good)
-
+            )  
 
         if isinstance(returnFunc, list):
+            #Never the case for now, returnFunc = "energy"
             if len(returnFunc) > 1:
                 return dict_return
             else:
@@ -378,7 +332,7 @@ ORACLE MODELS ZOO
 """
 ###
 
-
+#MLP Toy Oracle
 class Activation(nn.Module):
     def __init__(self, activation_func="relu"):
         super().__init__()
