@@ -57,6 +57,9 @@ class GFlowNet:
         self.loginf = tf_list([1e6])
         self.buffer = Buffer(self.config)
         self.test_period = self.config.gflownet.test.period
+        self.oracle_period = self.config.gflownet.oracle.period
+        self.oracle_nsamples = self.config.gflownet.oracle.n_samples
+        self.oracle_k = self.config.gflownet.oracle.k
 
     def load_hyperparameters(self):
         self.flowmatch_eps = tf_list([self.config.gflownet.loss.flowmatch_eps])
@@ -515,6 +518,10 @@ class GFlowNet:
                 corr = np.corrcoef(data_logq, self.buffer.test["energies"])
                 self.logger.log_metric("test_corr_logq_score", corr[0, 1])
                 self.logger.log_metric("test_mean_logq", np.mean(data_logq))
+            
+            if (it%self.oracle_period):
+                queries = self.gflownet.sample_queries(self.oracle_nsamples)
+                energies = self.oracle.score(queries)
 
         # save model
         path = self.path_model
