@@ -587,14 +587,12 @@ class GFlowNet:
     def logq(self, path_list, actions_list, model, env, device):
         log_q = torch.tensor(1.0)
         for path, actions in zip(path_list, actions_list):
-            path = path[::-1]  # REVERSES THE LIST, so empty list at the top
+            path = path[::-1]
             actions = actions[::-1]
             path_ohe = torch.stack(list(map(self.manip2policy, path)))
-            # path = np.array(path)
+            # following would be required for transformer and rnn if they are implemented
             path_len = len(path)
             mask = None
-
-            # path_obs = np.asarray([env.state2obs(state) for state in path])
             with torch.no_grad():
                 # TODO: potentially mask invalid actions next_q
                 logits_path = model(path_ohe)
