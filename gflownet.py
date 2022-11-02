@@ -10,8 +10,6 @@ import pandas as pd
 import os
 from abc import abstractmethod
 
-# from utils.eval import logq
-
 # Utils function for the whole file, fixed once and for all
 global tf_list, tl_list, to, _dev
 _dev = [torch.device("cpu")]
@@ -313,9 +311,7 @@ class GFlowNet:
             state = self.rng.permutation(self.buffer.train.samples.values)[0]
             state_manip = self.env.base2manip(state)
             env.done = True
-            env.state = (
-                state_manip  # array([1, 2, 3, 0, 1, 2, 3, 3, 3, 0, 3, 1, 3, 2, 4])
-            )
+            env.state = state_manip
             env.last_action = self.env.token_eos
 
             while len(env.state) > 0:
@@ -508,22 +504,14 @@ class GFlowNet:
                     zip(self.buffer.test.samples.values, self.buffer.test["energies"]),
                     disable=self.test_period < 10,
                 ):
-                    # t0_test_path = time.time()
-                    # in the previous code, readable2state returns a list, so i first convert the output from base2manip
-                    # into a list and then feed it in as it is done in the previous code. Plus readable2state does not append the eos
                     statestr = statestr.tolist()
                     path_list, actions = self.env.get_paths(
                         [[statestr]],
                         [[self.env.token_eos]],
                     )
-                    # t1_test_path = time.time()
-                    # times["test_paths"] += t1_test_path - t0_test_path
-                    # t0_test_logq = time.time()
                     data_logq.append(
                         self.logq(path_list, actions, self.model, self.env, self.device)
                     )
-                    # t1_test_logq = time.time()
-                    # times["test_logq"] += t1_test_logq - t0_test_logq
                 corr = np.corrcoef(data_logq, self.buffer.test["energies"])
                 self.logger.log_metric("test_corr_logq_score", corr[0, 1])
                 self.logger.log_metric("test_mean_logq", np.mean(data_logq))
@@ -571,7 +559,6 @@ class GFlowNet:
         initial_len = len(seq_manip)
 
         seq_tensor = torch.Tensor(seq_manip)
-        # seq_tensor = torch.FloatTensor(seq_manip)
         seq_ohe = F.one_hot(seq_tensor.long(), num_classes=self.env.n_alphabet + 1)
         input_policy = seq_ohe.reshape(1, -1).float()
 
@@ -582,7 +569,7 @@ class GFlowNet:
             ).view(1, -1)
             input_policy = torch.cat((input_policy, padding), dim=1)
 
-        return to(input_policy)[0]  # (1, 105)
+        return to(input_policy)[0]
 
     def logq(self, path_list, actions_list, model, env, device):
         log_q = torch.tensor(1.0)
