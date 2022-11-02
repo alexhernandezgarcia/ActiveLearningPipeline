@@ -676,7 +676,7 @@ class Transformer(nn.Module):
         )
 
     def forward(self, x, mask):
-        x = self.preprocess(x)
+        x = self.preprocess(x.to(torch.int64))
         x = self.embedding(x)
         x = self.pos(x)
         x = self.encoder(x, src_key_padding_mask=mask)
