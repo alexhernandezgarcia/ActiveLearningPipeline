@@ -187,7 +187,7 @@ class GFlowNet:
         states_ohe = torch.stack(list(map(self.manip2policy, states))).view(
             len(states), -1
         )
-        masks = tf_list([env.get_mask() for env in envs])
+        masks = tf_list([env.get_mask_invalid_actions() for env in envs])
 
         if policy == "model":
             with torch.no_grad():
@@ -246,7 +246,7 @@ class GFlowNet:
         else:
             raise NotImplemented
 
-        action_logits = torch.where(masks == 1, action_logits, -self.loginf)
+        action_logits = torch.where(masks == 0, action_logits, -self.loginf)
         if all(torch.isfinite(action_logits).flatten()):
             actions = Categorical(logits=action_logits).sample()
         else:
@@ -316,7 +316,7 @@ class GFlowNet:
             while len(env.state) > 0:
                 previous_state = env.state
                 previous_done = env.done
-                previous_mask = env.get_mask()
+                previous_mask = env.get_mask_invalid_actions()
                 env, parents, parents_a = self.backward_sample(
                     env, policy="model", temperature=self.temperature
                 )
@@ -361,7 +361,7 @@ class GFlowNet:
                     parents, parents_a = env.get_parents()
                     state_ohe = self.manip2policy(env.state)
                     parents_ohe = torch.stack(list(map(self.manip2policy, parents)))
-                    mask = env.get_mask()
+                    mask = env.get_mask_invalid_actions()
                     batch.append(
                         [
                             state_ohe.unsqueeze(0),
@@ -449,7 +449,7 @@ class GFlowNet:
 
         # OUTFLOW
         q_out = self.model(seqs)
-        q_out = torch.where(masks == 1, q_out, -self.loginf)
+        q_out = torch.where(masks == 0, q_out, -self.loginf)
         q_out = torch.logsumexp(q_out, 1)
 
         child_Qsa = q_out * (1 - done) - self.loginf * done
@@ -557,7 +557,7 @@ Utils Buffer
 
 class Buffer:
     """
-    Buffer of data : 
+    Buffer of data :
     - loads the data from oracle and put the best ones as offline training data
     - maintains a replay buffer composed of the best trajectories sampled for training
     """
