@@ -159,18 +159,11 @@ class GFlowNet:
 
         Args
         ----
-        env : list of GFlowNetEnv or derived
-            A list of instances of the environment
-
-        times : dict
-            Dictionary to store times
+        env : list of instances of the environment (EnvBase or derived)
 
         policy : string
             - model: uses self.model to obtain the sampling probabilities.
             - uniform: samples uniformly from the action space.
-
-        model : torch model
-            Model to use as policy if policy="model"
 
         temperature : float
             Temperature to adjust the logits by logits /= temperature
@@ -294,9 +287,25 @@ class GFlowNet:
 
     def get_training_data(self, batch_size):
         """
+        Args:
+            batch_size: int
+
+        Function:
         Calls the buffer to get some interesting training data
         Performs backward sampling for off policy data and forward sampling
         Calls the utils method forward sampling and backward sampling
+
+        Returns: batch, a list
+        Each item in the batch is a list of 8 elements (all tensors except [6]):
+                - [0] the state, (one hot encoded) 
+                - [1] the action
+                - [2] mask
+                - [3] reward of the state
+                - [4] all parents of the state (one hot encoded) 
+                - [5] actions that lead to the state from each parent
+                - [6] done [True, False]
+                - [7] path id: identifies each path
+                - [8] state id: identifies each state within a path
         """
 
         batch = []
@@ -419,6 +428,21 @@ class GFlowNet:
         return batch
 
     def flowmatch_loss(self, data):
+
+        """
+        Args: data: list of tuples where  each item in data is a list of 8 elements (all tensors):
+                - [0] the state, as state2obs(state)
+                - [1] the action
+                - [2] mask of invalid actions
+                - [3] reward of the state
+                - [4] all parents of the state
+                - [5] actions that lead to the state from each parent
+                - [6] done [True, False]
+                - [7] path id: identifies each path
+                - [8] state id: identifies each state within a path
+        Returns:
+            loss
+        """
         self.model.train()
 
         # for inputflow, id of parents
@@ -533,6 +557,16 @@ class GFlowNet:
         return batch
 
     def manip2policy(self, state):
+        """
+        Args:
+            state: array
+            input_policy: tensor on desired device
+
+        Grid Example:
+            state: array([0, 0])
+            input_policy: tensor([[1., 0., 0., 1., 0., 0.]])
+
+        """
         seq_manip = state
         initial_len = len(seq_manip)
 
@@ -584,6 +618,13 @@ class Buffer:
         return df
 
     def make_train_test_set(self):
+        """
+        Function:
+        Creates
+            df: dataframe with columns [samples, energies, train, test]
+            train: datatframe with columns [samples, energies, train, test] where df['train'] = True and df['test'] = False
+            test: datatframe with columns [samples, energies, train, test] where df['train'] = False and df['test'] = True
+        """
         df = self.np2df()
         indices = self.rng.permutation(len(df.index))
         n_tt = int(0.1 * len(indices))

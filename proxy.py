@@ -514,8 +514,8 @@ class MLP(nn.Module):
         self.device = config.device
         act_func = "relu"
 
-        self.input_max_length = self.config.env.max_len
-        self.input_classes = self.config.env.dict_size
+        self.input_max_length = self.config.env.aptamers.max_len
+        self.input_classes = self.config.env.aptamers.dict_size
         self.out_dim = 1
         self.transformerCall = transformerCall
 

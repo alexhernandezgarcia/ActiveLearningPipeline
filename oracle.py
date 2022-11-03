@@ -45,7 +45,13 @@ class Oracle:
     def initialize_dataset(self, save=True, return_data=False, use_context=False):
         # the method to initialize samples in the BASE format is specific to each oracle for now. It can be changed.
         # the first samples are in the "base format", so as to be directly saved as such and sent for query (base2oracle transition)
-
+        # samples is a list of arrays
+        """
+        Returns or saves a dictionary data where 
+        data['samples'] is a list of arrays
+        data['samples'][idx] is a state array. For example, array([2, 1])
+        data['energies'] is an array of shape init_len
+        """
         samples = self.proxy.initialize_samples_base()
 
         data = {}
@@ -60,6 +66,8 @@ class Oracle:
     def score(self, queries, use_context=True):
         """
         Calls the specific oracle (class/function) and apply its "get_score" method on the dataset
+        Input: list of arrays. len = init_len
+        Output: array. array.shape=(init_len,)
         """
         scores = self.proxy.get_score(queries)
 
@@ -85,6 +93,9 @@ class OracleBase:
 
     @abstractmethod
     def initialize_samples_base(self):
+        """"
+        Returns list of arrays, where each array is a state
+        """
         raise NotImplementedError
 
     @abstractmethod
@@ -195,9 +206,9 @@ class OracleToy(OracleBase):
         super().__init__(config)
 
     def initialize_samples_base(self):
-        self.dict_size = self.config.env.dict_size
-        self.min_len = self.config.env.min_len
-        self.max_len = self.config.env.max_len
+        self.dict_size = self.config.env.aptamers.dict_size
+        self.min_len = self.config.env.aptamers.min_len
+        self.max_len = self.config.env.aptamers.max_len
 
         self.init_len = self.config.oracle.init_dataset.init_len
         self.random_seed = self.config.oracle.init_dataset.seed
@@ -235,9 +246,9 @@ class OracleNupack(OracleBase):
         super().__init__(config)
 
     def initialize_samples_base(self):
-        self.dict_size = self.config.env.dict_size
-        self.min_len = self.config.env.min_len
-        self.max_len = self.config.env.max_len
+        self.dict_size = self.config.env.aptamers.dict_size
+        self.min_len = self.config.env.aptamers.min_len
+        self.max_len = self.config.env.aptamers.max_len
 
         self.init_len = self.config.oracle.init_dataset.init_len
         self.random_seed = self.config.oracle.init_dataset.seed
@@ -287,7 +298,12 @@ class OracleNupack(OracleBase):
         IMPORTANT : current implementation below with the commentaries correspond to the raw code in the oracle.py of the previous code.
         So far we commented the rest because we only focus on "energy" nupack reward function.
         """
-
+        """
+        queries[idx]: array([0, 3, 3, 3, 1, 1, 0, 2, 3, 2, 1, 0, 1, 3, 3, 3, 1, 3, 2, 2])
+        queries: list of arrays
+        seqence[idx]: 'AGGGTTACGCTATGGGTGCC'
+        sequence: list of string
+        """
         temperature = 310.0  # Kelvin
         ionicStrength = 1.0  # molar
 
@@ -381,14 +397,6 @@ class OracleNupack(OracleBase):
 class OracleGridCorners(OracleBase):
     def __init__(self, config):
         super().__init__(config)
-
-    def initialize_samples_base(self):
-
-        """
-        Constructs a randomly sampled train set.
-        Args
-        ----
-        """
         self.init_len = self.config.oracle.init_dataset.init_len
         self.random_seed = self.config.oracle.init_dataset.seed
         self.length = self.config.env.grid.length
@@ -397,6 +405,13 @@ class OracleGridCorners(OracleBase):
         self.cell_min= self.config.env.grid.cell_min
         self.cell_max= self.config.env.grid.cell_max
         self.cells = np.linspace(self.cell_min, self.cell_max, self.length)
+
+    def initialize_samples_base(self):
+
+        """
+        Constructs a randomly samples.
+        ----
+        """
         rng = np.random.default_rng(self.random_seed)
         samples = []
         for i in range(self.init_len):
@@ -404,32 +419,43 @@ class OracleGridCorners(OracleBase):
         # convert to list as all other oracles return a list
         return samples
 
-    def base2oracle(self, state_list):
+    def base2oracle(self, state):
         """
-        Input : array = seq
-        Output : array = seq
+        Input : array([2, 1])
+        Output : array([1., 0.])
         """
 
-        def state2obs(state):    
-            # if state is None:
-                # state = self.state.copy()
-            obs = np.zeros(self.obs_dim, dtype=np.float32)
-            obs[(np.arange(len(state)) * self.length + state)] = 1
-            return obs
+        obs = np.zeros(self.obs_dim, dtype=np.float32)
+        obs[(np.arange(len(state)) * self.length + state)] = 1
+        obs = obs.reshape((self.n_dim, self.length)) * self.cells[None, :]
+        obs = obs.sum(axis=1)
+        return obs
 
-        return [
-            (
-                state2obs(state).reshape((self.n_dim, self.length))
-                * self.cells[None, :]
-            ).sum(axis=1)
-            for state in state_list
-        ]
+
+        # def state2obs(state):   
+        #     """
+        #     state: array([2, 1])
+        #     obs: array([0., 0., 1., 0., 1., 0.], dtype=float32)
+        #     """ 
+        #     # if state is None:
+        #         # state = self.state.copy()
+        #     obs = np.zeros(self.obs_dim, dtype=np.float32)
+        #     obs[(np.arange(len(state)) * self.length + state)] = 1
+        #     return obs
+
+        # return (
+        #         state2obs(state_list).reshape((self.n_dim, self.length))
+        #         * self.cells[None, :]
+        #     ).sum(axis=1)
+        #     # for state in state_list
 
     def get_score(self, queries):
         """
-        Input: list
-        Output: list
+        Input: list of arrays
+        Output: array of scores
+
         """
+        sequences = list(map(self.base2oracle, queries))
         def _func_corners(x):
             ax = abs(x)
             return -1.0 * (
@@ -437,8 +463,7 @@ class OracleGridCorners(OracleBase):
                 + ((ax < 0.8) * (ax > 0.6)).prod(-1) * 2
                 + 1e-1
             )
-
-        return np.asarray([_func_corners(x) for x in queries])
+        return np.asarray([_func_corners(x) for x in sequences])
 
 ### Diverse Models of Oracle for now
 """

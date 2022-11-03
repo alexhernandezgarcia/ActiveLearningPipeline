@@ -146,10 +146,10 @@ class EnvAptamers(EnvBase):
         self.max_word_len = self.config.env.aptamers.max_word_len
         self.min_word_len = self.config.env.aptamers.min_word_len
         self.pad_len = self.max_seq_len + 1
-        self.action_space = self.get_action_space()
         self.n_alphabet = self.config.env.aptamers.dict_size
-        self.dict_size = self.config.env.aptamers.dict_size + 1 # because of eos
-        self.obs_dim = (self.config.env.max_len + 1) * (self.config.env.dict_size + 1)
+        self.dict_size = self.config.env.aptamers.dict_size + 1 # because of eos (USED IN MLP OUTPUT)
+        self.obs_dim = (self.config.env.aptamers.max_len + 1) * (self.config.env.aptamers.dict_size + 1) # USED IN MLP INPUT
+        self.action_space = self.get_action_space() #Must be after definition of n_alphabet
         self.token_eos = self.get_token_eos(self.action_space)
         self.min_reward = 1e-8
         self.reward_beta = self.config.env.reward_beta
@@ -393,24 +393,6 @@ class EnvGrid(EnvBase):
                     break
         return mask
     
-    # # base2oracle??
-    # def state2oracle(self, state_list):
-    #     """
-    #     Prepares a list of states in "GFlowNet format" for the oracles: a list of length
-    #     n_dim with values in the range [cell_min, cell_max] for each state.
-    #     Args
-    #     ----
-    #     state_list : list of lists
-    #         List of states.
-    #     """
-    #     return [
-    #         (
-    #             self.state2obs(state).reshape((self.n_dim, self.length))
-    #             * self.cells[None, :]
-    #         ).sum(axis=1)
-    #         for state in state_list
-    #     ]
-
     # TODO: implement obs2state, readable2state, state2readable if required
 
 
@@ -494,6 +476,16 @@ class EnvGrid(EnvBase):
             return self.state, [self.token_eos], True
 
     def get_reward(self, states, done):
+        """
+        Args:
+            states: tuple of arrays
+            done: tuple of boolen values
+            len(states) = len(done)
+        Function:
+            Calls the desired acquisition function to calculate rewards of final states
+        Return:
+            rewards: numpy array containing reward of all states terminal and non-terminal
+        """
         rewards = np.zeros(len(done), dtype=float)
         final_states = [s for s, d in zip(states, done) if d]
         # final_states = final_states
@@ -520,12 +512,13 @@ class EnvGrid(EnvBase):
         # return seq_manip
 
     def manip2base(self, state):
-        seq_manip = state
-        if seq_manip[-1] == self.token_eos:
-            seq_base = seq_manip[:-1]
-            return seq_base
-        else:
-            raise TypeError
+        return state
+        # seq_manip = state
+        # if seq_manip[-1] == self.token_eos:
+        #     seq_base = seq_manip[:-1]
+        #     return seq_base
+        # else:
+        #     raise TypeError
 
     # @staticmethod
     # def func_corners(x_list):

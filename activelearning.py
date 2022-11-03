@@ -84,7 +84,7 @@ class GflownetAgent:
 
     def run_pipeline(self):
         # we initialize the dataset
-        self.oracle.initialize_dataset()
+        # self.oracle.initialize_dataset()
         self.gflownet.train()
         queries = self.querier.build_query()
         energies = self.oracle.score(queries)
