@@ -32,11 +32,13 @@ class Oracle:
     def init_oracle(self):
         # calling the relevant oracle. All oracles should follow the model of OracleBase
         if self.config.oracle.main == "mlp":
-            self.oracle = OracleMLP(self.config)
+            self.proxy = OracleMLP(self.config)
         elif self.config.oracle.main == "toy":
-            self.oracle = OracleToy(self.config)
+            self.proxy = OracleToy(self.config)
         elif self.config.oracle.main == "nupack":
-            self.oracle = OracleNupack(self.config)
+            self.proxy = OracleNupack(self.config)
+        elif self.config.oracle.main == "corners":
+            self.proxy = OracleGridCorners(self.config)
         else:
             raise NotImplementedError
 
@@ -44,14 +46,14 @@ class Oracle:
         # the method to initialize samples in the BASE format is specific to each oracle for now. It can be changed.
         # the first samples are in the "base format", so as to be directly saved as such and sent for query (base2oracle transition)
 
-        samples = self.oracle.initialize_samples_base()
+        samples = self.proxy.initialize_samples_base()
 
         data = {}
         data["samples"] = samples
         data["energies"] = self.score(samples, use_context)
         # print("initial data", data)
         if save:
-            np.save(self.path_data, data)
+           np.save(self.path_data, data)
         if return_data:
             return data
 
@@ -59,7 +61,7 @@ class Oracle:
         """
         Calls the specific oracle (class/function) and apply its "get_score" method on the dataset
         """
-        scores = self.oracle.get_score(queries)
+        scores = self.proxy.get_score(queries)
 
         self.logger.log_histogram("oracle_energies", scores, use_context)
         return scores
@@ -110,15 +112,15 @@ class OracleMLP(OracleBase):
     def __init__(self, config):
         super().__init__(config)
         # parameters useful for the format of this custom trained MLP
-        self.dict_size = self.config.env.dict_size
+        self.dict_size = self.config.env.aptamers.dict_size
         self.max_len_mlp = 40  # this MLP was trained with seqs of len max 40
         self.path_oracle_mlp = self.config.path.model_oracle_MLP
         self.device = torch.device(self.config.device)
 
     def initialize_samples_base(self):
 
-        self.min_len = self.config.env.min_len
-        self.max_len = self.config.env.max_len
+        self.min_len = self.config.env.aptamers.min_len
+        self.max_len = self.config.env.aptamers.max_len
         self.init_len = self.config.oracle.init_dataset.init_len
         self.random_seed = self.config.oracle.init_dataset.seed
         np.random.seed(self.random_seed)
@@ -375,6 +377,68 @@ class OracleNupack(OracleBase):
         else:
             return dict_return[returnFunc].tolist()
 
+    
+class OracleGridCorners(OracleBase):
+    def __init__(self, config):
+        super().__init__(config)
+
+    def initialize_samples_base(self):
+
+        """
+        Constructs a randomly sampled train set.
+        Args
+        ----
+        """
+        self.init_len = self.config.oracle.init_dataset.init_len
+        self.random_seed = self.config.oracle.init_dataset.seed
+        self.length = self.config.env.grid.length
+        self.n_dim = self.config.env.grid.n_dim
+        self.obs_dim = self.length * self.n_dim
+        self.cell_min= self.config.env.grid.cell_min
+        self.cell_max= self.config.env.grid.cell_max
+        self.cells = np.linspace(self.cell_min, self.cell_max, self.length)
+        rng = np.random.default_rng(self.random_seed)
+        samples = []
+        for i in range(self.init_len):
+            samples.extend(rng.integers(low=0, high=self.length, size=(1,) + (self.n_dim,)))
+        # convert to list as all other oracles return a list
+        return samples
+
+    def base2oracle(self, state_list):
+        """
+        Input : array = seq
+        Output : array = seq
+        """
+
+        def state2obs(state):    
+            # if state is None:
+                # state = self.state.copy()
+            obs = np.zeros(self.obs_dim, dtype=np.float32)
+            obs[(np.arange(len(state)) * self.length + state)] = 1
+            return obs
+
+        return [
+            (
+                state2obs(state).reshape((self.n_dim, self.length))
+                * self.cells[None, :]
+            ).sum(axis=1)
+            for state in state_list
+        ]
+
+    def get_score(self, queries):
+        """
+        Input: list
+        Output: list
+        """
+        def _func_corners(x):
+            ax = abs(x)
+            return -1.0 * (
+                (ax > 0.5).prod(-1) * 0.5
+                + ((ax < 0.8) * (ax > 0.6)).prod(-1) * 2
+                + 1e-1
+            )
+
+        return np.asarray([_func_corners(x) for x in queries])
 
 ### Diverse Models of Oracle for now
 """

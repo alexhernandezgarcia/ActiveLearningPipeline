@@ -24,6 +24,8 @@ class Env:
         # so far only aptamers has been implemented
         if self.config.env.main == "aptamers":
             self.env = EnvAptamers(self.config, self.acq)
+        elif self.config.env.main == "grid":
+            self.env = EnvGrid(self.config, self.acq)
         else:
             raise NotImplementedError
 
@@ -89,6 +91,45 @@ class EnvBase:
         """
         raise NotImplementedError
 
+    def acq2reward(self, acq_values):
+        """
+        Prepares the output of an oracle for GFlowNet: the inputs proxy_vals is
+        expected to be a negative value (energy), unless self.denorm_proxy is True. If
+        the latter, the proxy values are first de-normalized according to the mean and
+        standard deviation in self.energies_stats. The output of the function is a
+        strictly positive reward - provided self.reward_norm and self.reward_beta are
+        positive - and larger than self.min_reward.
+        """
+        if self.reward_func == "power":
+            return np.clip(
+                (-1.0 * acq_values / self.reward_norm) ** self.reward_beta,
+                self.min_reward,
+                None,
+            )
+        elif self.reward_func == "boltzmann":
+            return np.clip(
+                np.exp(-1.0 * self.reward_beta * acq_values),
+                self.min_reward,
+                None,
+            )
+        else:
+            raise NotImplemented
+
+    def reward2acq(self, reward):
+        """
+        Converts a "GFlowNet reward" into a (negative) energy or values as returned by
+        an oracle.
+        """
+        if self.reward_func == "power":
+            return -np.exp(
+                (np.log(reward) + self.reward_beta * np.log(self.reward_norm))
+                / self.reward_beta
+            )
+        elif self.reward_func == "boltzmann":
+            return -1.0 * np.log(reward) / self.reward_beta
+        else:
+            raise NotImplemented
+
 
 """
 Specific Envs
@@ -100,17 +141,20 @@ class EnvAptamers(EnvBase):
         super().__init__(config, acq)
         self.device = self.config.device
 
-        self.max_seq_len = self.config.env.max_len
-        self.min_seq_len = self.config.env.min_len
-        self.max_word_len = self.config.env.max_word_len
-        self.min_word_len = self.config.env.min_word_len
-        self.n_alphabet = self.config.env.dict_size
+        self.max_seq_len = self.config.env.aptamers.max_len
+        self.min_seq_len = self.config.env.aptamers.min_len
+        self.max_word_len = self.config.env.aptamers.max_word_len
+        self.min_word_len = self.config.env.aptamers.min_word_len
+        self.pad_len = self.max_seq_len + 1
         self.action_space = self.get_action_space()
+        self.n_alphabet = self.config.env.aptamers.dict_size
+        self.dict_size = self.config.env.aptamers.dict_size + 1 # because of eos
+        self.obs_dim = (self.config.env.max_len + 1) * (self.config.env.dict_size + 1)
         self.token_eos = self.get_token_eos(self.action_space)
         self.min_reward = 1e-8
-        self.reward_beta = 4
-        self.reward_norm = 1.0
-        self.reward_func = "boltzmann"
+        self.reward_beta = self.config.env.reward_beta
+        self.reward_norm = self.config.env.reward_norm
+        self.reward_func = self.config.env.reward_func
         self.denorm_proxy = False
         self.env_class = EnvAptamers
         self.init_env()
@@ -138,6 +182,12 @@ class EnvAptamers(EnvBase):
 
     def get_token_eos(self, action_space):
         return len(action_space)
+
+    def acq2reward(self, acq_values):
+        return super().acq2reward(acq_values)
+
+    def reward2acq(self, reward):
+        return super().reward2acq(reward)
 
     def get_mask(self):
 
@@ -216,45 +266,6 @@ class EnvAptamers(EnvBase):
         else:
             raise TypeError("invalid action to take")
 
-    def acq2reward(self, acq_values):
-        """
-        Prepares the output of an oracle for GFlowNet: the inputs proxy_vals is
-        expected to be a negative value (energy), unless self.denorm_proxy is True. If
-        the latter, the proxy values are first de-normalized according to the mean and
-        standard deviation in self.energies_stats. The output of the function is a
-        strictly positive reward - provided self.reward_norm and self.reward_beta are
-        positive - and larger than self.min_reward.
-        """
-        if self.reward_func == "power":
-            return np.clip(
-                (-1.0 * acq_values / self.reward_norm) ** self.reward_beta,
-                self.min_reward,
-                None,
-            )
-        elif self.reward_func == "boltzmann":
-            return np.clip(
-                np.exp(-1.0 * self.reward_beta * acq_values),
-                self.min_reward,
-                None,
-            )
-        else:
-            raise NotImplemented
-
-    def reward2acq(self, reward):
-        """
-        Converts a "GFlowNet reward" into a (negative) energy or values as returned by
-        an oracle.
-        """
-        if self.reward_func == "power":
-            return -np.exp(
-                (np.log(reward) + self.reward_beta * np.log(self.reward_norm))
-                / self.reward_beta
-            )
-        elif self.reward_func == "boltzmann":
-            return -1.0 * np.log(reward) / self.reward_beta
-        else:
-            raise NotImplemented
-
     def get_reward(self, states, done):
         rewards = np.zeros(len(done), dtype=float)
         final_states = [s for s, d in zip(states, done) if d]
@@ -291,48 +302,39 @@ class EnvGrid(EnvBase):
     def __init__(self, config, acq) -> None:
         super().__init__(config, acq)
         self.device = self.config.device
-        self.n_dim = self.config.n_dim
-        self.length = self.config.length
-        self.min_step_len = self.config.min_step_length
-        self.max_step_len = self.config.max_step_length
-        self.cell_min= self.config.cell_min
-        self.cell_max= self.config.cell_max
-        self.env_id= None
-        self.reward_beta= self.config.reward_beta
-        self.reward_norm= self.config.reward_norm
-        self.reward_func= self.config.reward_func
-        self.oracle_func= self.config.oracle_func
+        self.n_dim = self.config.env.grid.n_dim
+        # self.length = self.config.env.grid.length
+        self.max_seq_len = self.config.env.grid.length
+        self.pad_len = self.n_dim
+        self.min_step_len = self.config.env.grid.min_step_length
+        self.max_step_len = self.config.env.grid.max_step_length
+        self.cell_min= self.config.env.grid.cell_min
+        self.cell_max= self.config.env.grid.cell_max
+        # self.env_id= None #??????
+        self.reward_beta= self.config.env.reward_beta
+        self.reward_norm= self.config.env.reward_norm
+        self.reward_func= self.config.env.reward_func
         self.env_class = EnvGrid
-        self.obs_dim = self.length * self.n_dim
-        self.cells = np.linspace(self.cell_min, self.cell_max, self.length)
-        self.oracle = {
-            "default": None,
-            "cos_N": self.func_cos_N,
-            "corners": self.func_corners,
-            "corners_floor_A": self.func_corners_floor_A,
-            "corners_floor_B": self.func_corners_floor_B,
-        }[self.oracle_func]
+        self.obs_dim = self.max_seq_len * self.n_dim
+        self.cells = np.linspace(self.cell_min, self.cell_max, self.max_seq_len)
+
+        # ??????
+        # self.oracle_func= self.config.oracle
+        # self.oracle = {
+        #     "default": None,
+        #     "cos_N": self.func_cos_N,
+        #     "corners": self.func_corners,
+        #     "corners_floor_A": self.func_corners_floor_A,
+        #     "corners_floor_B": self.func_corners_floor_B,
+        # }[self.oracle_func] # ??????
+
         self.action_space = self.get_action_space()
+        # used only in manip2policy to decide ohe size
+        self.dict_size = len(self.action_space)+1
         self.token_eos = self.get_token_eos(self.action_space)
-        self.init_env()
+        self.min_reward = 1e-8
 
-        # debug=False,
-
-        # aptamers
-        # self.max_seq_len = self.config.env.max_len
-        # self.min_seq_len = self.config.env.min_len
-        # self.max_word_len = self.config.env.max_word_len
-        # self.min_word_len = self.config.env.min_word_len
-        # self.n_alphabet = self.config.env.dict_size
-        # self.action_space = self.get_action_space()
-        # self.token_eos = self.get_token_eos(self.action_space)
-        # self.min_reward = 1e-8
-        # self.reward_beta = 4
-        # self.reward_norm = 1.0
-        # self.reward_func = "boltzmann"
-        # self.denorm_proxy = False
-        # self.env_class = EnvAptamers
-        
+        self.init_env()        
         
     def create_new_env(self, idx):
         env = EnvGrid(self.config, self.acq)
@@ -343,12 +345,12 @@ class EnvGrid(EnvBase):
         """
         Resets the environment.
         """
-        self.state = [0 for _ in range(self.n_dim)]
+        self.state = np.array([0 for _ in range(self.n_dim)])
         self.n_actions_taken = 0
         self.done = False
         self.id = idx
         self.last_action = None
-        return self
+        # return self
 
     def get_action_space(self):
         """
@@ -364,54 +366,55 @@ class EnvGrid(EnvBase):
     
     def get_token_eos(self, action_space):
         return len(action_space)
-    
+
+    def acq2reward(self, acq_values):
+        return super().acq2reward(acq_values)
+
+    def reward2acq(self, reward):
+        return super().reward2acq(reward)
+        
     def get_mask(self):
         """
         Returns a vector of length the action space + 1: True if action is invalid
         given the current state, False otherwise.
         """
-        mask = [1] * (len(self.action_space) + 1)
 
+        # if state is None:
+            # state = self.state.copy()
+        # if done is None:
+            # done = self.done
         if self.done:
-            return [0 for _ in mask]
-
-        if state is None:
-            state = self.state.copy()
-        if done is None:
-            done = self.done
-        if done:
-            return [True for _ in range(len(self.action_space) + 1)]
-        mask = [False for _ in range(len(self.action_space) + 1)]
+            return [0 for _ in range(len(self.action_space) + 1)]
+        mask = [1 for _ in range(len(self.action_space) + 1)]
         for idx, a in enumerate(self.action_space):
             for d in a:
-                if state[d] + 1 >= self.length:
-                    mask[idx] = True
+                if self.state[d] + 1 >= self.max_seq_len:
+                    mask[idx] = 0
                     break
         return mask
     
-    # base2oracle??
-    def state2oracle(self, state_list):
-        """
-        Prepares a list of states in "GFlowNet format" for the oracles: a list of length
-        n_dim with values in the range [cell_min, cell_max] for each state.
-        Args
-        ----
-        state_list : list of lists
-            List of states.
-        """
-        return [
-            (
-                self.state2obs(state).reshape((self.n_dim, self.length))
-                * self.cells[None, :]
-            ).sum(axis=1)
-            for state in state_list
-        ]
+    # # base2oracle??
+    # def state2oracle(self, state_list):
+    #     """
+    #     Prepares a list of states in "GFlowNet format" for the oracles: a list of length
+    #     n_dim with values in the range [cell_min, cell_max] for each state.
+    #     Args
+    #     ----
+    #     state_list : list of lists
+    #         List of states.
+    #     """
+    #     return [
+    #         (
+    #             self.state2obs(state).reshape((self.n_dim, self.length))
+    #             * self.cells[None, :]
+    #         ).sum(axis=1)
+    #         for state in state_list
+    #     ]
 
     # TODO: implement obs2state, readable2state, state2readable if required
 
 
-    def get_parents(self, state=None, done=None):
-        # TODO: change after Bao's PR?
+    def get_parents(self, backward=False):
         """
         Determines all parents and actions that lead to state.
         Args
@@ -428,24 +431,25 @@ class EnvGrid(EnvBase):
         actions : list
             List of actions that lead to state for each parent in parents
         """
-        if state is None:
-            state = self.state.copy()
-        if done is None:
-            done = self.done
-        if done:
-            return [self.state2obs(state)], [self.eos]
+        # if state is None:
+        #     state = self.state.copy()
+        # if done is None:
+        #     done = self.done
+        if self.done:
+            return [self.state], [self.token_eos]
+
         else:
             parents = []
             actions = []
             for idx, a in enumerate(self.action_space):
-                state_aux = state.copy()
+                state_aux = self.state.copy()
                 for a_sub in a:
                     if state_aux[a_sub] > 0:
                         state_aux[a_sub] -= 1
                     else:
                         break
                 else:
-                    parents.append(self.state2obs(state_aux))
+                    parents.append((state_aux))
                     actions.append(idx)
         return parents, actions
 
@@ -454,7 +458,7 @@ class EnvGrid(EnvBase):
         Executes step given an action.
         Args
         ----
-        a : int (tensor)
+        a : list
             Index of action in the action space. a == eos indicates "stop action"
         Returns
         -------
@@ -465,71 +469,107 @@ class EnvGrid(EnvBase):
             root state
         """
         # All dimensions are at the maximum length
-        if all([s == self.length - 1 for s in self.state]):
+        # TODO: check state has eos or not
+        if all([s == self.max_seq_len - 1 for s in self.state]):
             self.done = True
-            self.n_actions += 1
-            return self.state, [self.eos], True
-        if action != self.eos:
+            self.n_actions_taken += 1
+            return self.state, [self.token_eos], True
+        if action != [self.token_eos]:
             state_next = self.state.copy()
-            if action.ndim == 0:
-                action = [action]
+            # action is already a list so no need to do the following I guess
+            # if action.ndim == 0:
+                # action = [action]
             for a in action:
                 state_next[a] += 1
-            if any([s >= self.length for s in state_next]):
+            if any([s >= self.max_seq_len for s in state_next]):
                 valid = False
             else:
                 self.state = state_next
                 valid = True
-                self.n_actions += 1
+                self.n_actions_taken += 1
             return self.state, action, valid
         else:
             self.done = True
-            self.n_actions += 1
-            return self.state, [self.eos], True
+            self.n_actions_taken += 1
+            return self.state, [self.token_eos], True
 
-    @staticmethod
-    def func_corners(x_list):
-        def _func_corners(x):
-            ax = abs(x)
-            return -1.0 * (
-                (ax > 0.5).prod(-1) * 0.5
-                + ((ax < 0.8) * (ax > 0.6)).prod(-1) * 2
-                + 1e-1
-            )
+    def get_reward(self, states, done):
+        rewards = np.zeros(len(done), dtype=float)
+        final_states = [s for s, d in zip(states, done) if d]
+        # final_states = final_states
+        # inputs_af_base = [self.manip2base(final_state) for final_state in final_states]
 
-        return np.asarray([_func_corners(x) for x in x_list])
+        final_rewards = (
+            self.acq.get_reward(final_states)
+            .view(len(final_states))
+            .cpu()
+            .detach()
+            .numpy()
+        )
+        final_rewards = self.acq2reward(final_rewards)
 
-    @staticmethod
-    def func_corners_floor_B(x_list):
-        def _func_corners_floor_B(x_list):
-            ax = abs(x)
-            return -1.0 * (
-                (ax > 0.5).prod(-1) * 0.5
-                + ((ax < 0.8) * (ax > 0.6)).prod(-1) * 2
-                + 1e-2
-            )
+        done = np.array(done)
+        rewards[done] = final_rewards
+        return rewards
 
-        return np.asarray([_func_corners_floor_B(x) for x in x_list])
+    def base2manip(self, state):
+        # state is just a coordinate -- does not make sense to add eos to coordinate
+        return state
+        # seq_base = state
+        # seq_manip = np.concatenate((seq_base, [self.token_eos]))
+        # return seq_manip
 
-    @staticmethod
-    def func_corners_floor_A(x_list):
-        def _func_corners_floor_A(x_list):
-            ax = abs(x)
-            return -1.0 * (
-                (ax > 0.5).prod(-1) * 0.5
-                + ((ax < 0.8) * (ax > 0.6)).prod(-1) * 2
-                + 1e-3
-            )
+    def manip2base(self, state):
+        seq_manip = state
+        if seq_manip[-1] == self.token_eos:
+            seq_base = seq_manip[:-1]
+            return seq_base
+        else:
+            raise TypeError
 
-        return np.asarray([_func_corners_floor_A(x) for x in x_list])
+    # @staticmethod
+    # def func_corners(x_list):
+    #     def _func_corners(x):
+    #         ax = abs(x)
+    #         return -1.0 * (
+    #             (ax > 0.5).prod(-1) * 0.5
+    #             + ((ax < 0.8) * (ax > 0.6)).prod(-1) * 2
+    #             + 1e-1
+    #         )
 
-    @staticmethod
-    def func_cos_N(x_list):
-        def _func_cos_N(x_list):
-            ax = abs(x)
-            return -1.0 * (((np.cos(x * 50) + 1) * norm.pdf(x * 5)).prod(-1) + 0.01)
+    #     return np.asarray([_func_corners(x) for x in x_list])
 
-        return np.asarray([_func_cos_N(x) for x in x_list])
+    # @staticmethod
+    # def func_corners_floor_B(x_list):
+    #     def _func_corners_floor_B(x_list):
+    #         ax = abs(x)
+    #         return -1.0 * (
+    #             (ax > 0.5).prod(-1) * 0.5
+    #             + ((ax < 0.8) * (ax > 0.6)).prod(-1) * 2
+    #             + 1e-2
+    #         )
+
+    #     return np.asarray([_func_corners_floor_B(x) for x in x_list])
+
+    # @staticmethod
+    # def func_corners_floor_A(x_list):
+    #     def _func_corners_floor_A(x_list):
+    #         ax = abs(x)
+    #         return -1.0 * (
+    #             (ax > 0.5).prod(-1) * 0.5
+    #             + ((ax < 0.8) * (ax > 0.6)).prod(-1) * 2
+    #             + 1e-3
+    #         )
+
+    #     return np.asarray([_func_corners_floor_A(x) for x in x_list])
+
+    # @staticmethod
+    # def func_cos_N(x_list):
+    #     def _func_cos_N(x_list):
+    #         ax = abs(x)
+    #         return -1.0 * (((np.cos(x * 50) + 1) * norm.pdf(x * 5)).prod(-1) + 0.01)
+
+    #     return np.asarray([_func_cos_N(x) for x in x_list])
 
 
 

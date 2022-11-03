@@ -114,7 +114,7 @@ class GFlowNet:
             return lr_scheduler
 
         if new_model:
-            self.model = self.model_class(self.config)
+            self.model = self.model_class(self.config, self.env.obs_dim, self.env.action_space)
             self.opt = make_opt(self.model.parameters(), self.config)
 
             if self.device == "cuda":
@@ -130,7 +130,7 @@ class GFlowNet:
             path_best_model = self.path_model
             if os.path.exists(path_best_model):
                 checkpoint = torch.load(path_best_model)
-                self.best_model = self.model_class(self.config)
+                self.best_model = self.model_class(self.config, self.env.obs_dim, self.env.action_space)
                 self.best_model.load_state_dict(checkpoint["model_state_dict"])
                 self.best_opt = make_opt(self.best_model.parameters(), self.config)
                 self.best_opt.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -140,7 +140,7 @@ class GFlowNet:
                 print(
                     "the best previous model could not be loaded, random gfn for best model"
                 )
-                self.best_model = self.model_class(self.config)
+                self.best_model = self.model_class(self.config, self.env.obs_dim, self.env.action_space)
                 self.best_opt = make_opt(self.best_model.parameters(), self.config)
                 self.best_lr_scheduler = make_lr_scheduler(self.best_opt, self.config)
 
@@ -537,10 +537,10 @@ class GFlowNet:
         initial_len = len(seq_manip)
 
         seq_tensor = torch.from_numpy(seq_manip)
-        seq_ohe = F.one_hot(seq_tensor.long(), num_classes=self.env.n_alphabet + 1)
+        seq_ohe = F.one_hot(seq_tensor.long(), num_classes=self.env.dict_size)
         input_policy = seq_ohe.reshape(1, -1).float()
 
-        number_pads = self.env.max_seq_len + 1 - initial_len
+        number_pads = self.env.pad_len - initial_len
         if number_pads:
             padding = torch.cat(
                 [torch.tensor([0] * (self.env.n_alphabet + 1))] * number_pads
@@ -614,17 +614,17 @@ class Activation(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, obs_dim, action_space):
         super().__init__()
 
         self.config = config
         act_func = "relu"
 
         # Architecture
-        self.input_max_length = self.config.env.max_len + 1
-        self.input_classes = self.config.env.dict_size + 1
-        self.init_layer_size = int(self.input_max_length * self.input_classes)
-        self.final_layer_size = int(self.input_classes)
+        # self.input_max_length = self.config.env.max_len + 1
+        # self.input_classes = self.config.env.dict_size + 1
+        self.init_layer_size = obs_dim
+        self.final_layer_size = len(action_space) +1 #3
 
         self.filters = 256
         self.layers = 16

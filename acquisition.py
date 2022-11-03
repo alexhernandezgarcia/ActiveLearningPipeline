@@ -21,6 +21,8 @@ class AcquisitionFunction:
         # so far, only proxy acquisition function has been implemented, only add new acquisition class inheriting from AcquisitionFunctionBase to innovate
         if self.config.acquisition.main == "proxy":
             self.acq = AcquisitionFunctionProxy(self.config, self.proxy)
+        if self.config.acquisition.main == "oracle":
+            self.acq = AcquisitionFunctionOracle(self.config, self.proxy)
         else:
             raise NotImplementedError
 
@@ -96,3 +98,16 @@ class AcquisitionFunctionProxy(AcquisitionFunctionBase):
                 outputs = self.proxy.model(inputs, None)
 
         return outputs
+
+
+class AcquisitionFunctionOracle(AcquisitionFunctionBase):
+    def __init__(self, config, proxy):
+        super().__init__(config, proxy)
+
+    def get_reward_batch(self, inputs_af_base):  
+        super().get_reward_batch(inputs_af_base)
+        # this uses oraclebase specific functions not oracle
+        inputs_af = self.proxy.base2oracle(inputs_af_base)
+        outputs = self.proxy.get_score(inputs_af)
+
+        return torch.FloatTensor(outputs)

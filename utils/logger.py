@@ -19,12 +19,13 @@ class Logger:
     def __init__(self, config):
         self.config = config
         date_time = datetime.today().strftime("%d/%m-%H:%M:%S")
-        run_name = "proxy{}_oracle{}_gfn{}_minLen{}_maxLen{}_{}".format(
+        run_name = "{}_proxy{}_oracle{}_gfn{}_minLen{}_maxLen{}_{}".format(
+            config.env.main.upper(),
             config.proxy.model.upper(),
             config.oracle.main.upper(),
             config.gflownet.policy_model.upper(),
-            config.env.min_len,
-            config.env.max_len,
+            config.env.aptamers.min_len,
+            config.env.aptamers.max_len,
             date_time,
         )
         self.run = wandb.init(
