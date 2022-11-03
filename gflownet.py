@@ -668,8 +668,6 @@ class MLP(nn.Module):
         act_func = "relu"
 
         # Architecture
-        # self.input_max_length = self.config.env.max_len + 1
-        # self.input_classes = self.config.env.dict_size + 1
         self.init_layer_size = obs_dim
         self.final_layer_size = dict_size  # 3
 

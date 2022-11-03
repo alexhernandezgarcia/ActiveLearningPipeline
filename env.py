@@ -343,7 +343,6 @@ class EnvGrid(EnvBase):
         self.done = False
         self.id = idx
         self.last_action = None
-        # return self
 
     def get_action_space(self):
         """
@@ -445,7 +444,6 @@ class EnvGrid(EnvBase):
             root state
         """
         # All dimensions are at the maximum length
-        # TODO: check state has eos or not
         if all([s == self.max_seq_len - 1 for s in self.state]):
             self.done = True
             self.n_actions_taken += 1
@@ -482,8 +480,6 @@ class EnvGrid(EnvBase):
         """
         rewards = np.zeros(len(done), dtype=float)
         final_states = [s for s, d in zip(states, done) if d]
-        # final_states = final_states
-        # inputs_af_base = [self.manip2base(final_state) for final_state in final_states]
 
         final_rewards = (
             self.acq.get_reward(final_states)
@@ -501,9 +497,6 @@ class EnvGrid(EnvBase):
     def base2manip(self, state):
         # state is just a coordinate -- does not make sense to add eos to coordinate
         return state
-        # seq_base = state
-        # seq_manip = np.concatenate((seq_base, [self.token_eos]))
-        # return seq_manip
 
     def manip2base(self, state):
         return state

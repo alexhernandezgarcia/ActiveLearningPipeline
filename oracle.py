@@ -433,23 +433,6 @@ class OracleGridCorners(OracleBase):
         obs = obs.sum(axis=1)
         return obs
 
-        # def state2obs(state):
-        #     """
-        #     state: array([2, 1])
-        #     obs: array([0., 0., 1., 0., 1., 0.], dtype=float32)
-        #     """
-        #     # if state is None:
-        #         # state = self.state.copy()
-        #     obs = np.zeros(self.obs_dim, dtype=np.float32)
-        #     obs[(np.arange(len(state)) * self.length + state)] = 1
-        #     return obs
-
-        # return (
-        #         state2obs(state_list).reshape((self.n_dim, self.length))
-        #         * self.cells[None, :]
-        #     ).sum(axis=1)
-        #     # for state in state_list
-
     def get_score(self, queries):
         """
         Input: list of arrays

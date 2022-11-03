@@ -4,7 +4,7 @@ debug : True
 al:
   n_iter: 10
   queries_per_it: 100
-  mode: False
+  mode: True
 
 path :
   data_oracle : "./storage/data_oracle/database.npy"
@@ -32,7 +32,7 @@ env:
   reward_func: "boltzmann"
 
 oracle:
-  main : "nupack" #corners nupack
+  main : "corners" #corners nupack
   init_dataset:
     seed : 0
     init_len : 100
@@ -76,7 +76,7 @@ gflownet:
     ttsr : 3
 
 acquisition:
-  main: "oracle" #oracle in absence of active learning
+  main: "proxy" #oracle in absence of active learning
   
 
   

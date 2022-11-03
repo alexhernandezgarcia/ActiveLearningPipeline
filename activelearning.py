@@ -34,13 +34,8 @@ class ActiveLearning:
         self.proxy = Proxy(self.config, self.logger)
         self.acq = AcquisitionFunction(self.config, self.proxy)
         self.gfn_agent = GflownetAgent(self.config, self.logger, self.acq)
-        # self.env = Env(self.config, self.acq)
-        # self.gflownet = GFlowNet(self.config, self.logger, self.env)
-        # self.querier = Querier(self.config, self.gflownet)
 
     def run_pipeline(self):
-        # intialise iter so that doesnt lead to error in logging stats of initial dataset
-        # self.iter = None
         self.oracle.initialize_dataset()
         for self.iter in range(self.config.al.n_iter):
             self.logger.set_context("iter{}".format(self.iter + 1))
@@ -92,7 +87,6 @@ class GflownetAgent:
         self.gflownet.train()
         queries = self.querier.build_query()
         energies = self.oracle.score(queries)
-        # self.logger.finish()
         return queries, energies
 
     def setup(self):
@@ -104,7 +98,7 @@ class GflownetAgent:
 
 if __name__ == "__main__":
     # TODO : activelearning pipeline as a simple function, without the class ?
-    config_test_name = "./config_test.yaml"
+    config_test_name = "config_test.yaml"
     config = OmegaConf.load(config_test_name)
     if config.al.mode == True:
         al = ActiveLearning(config=config)
