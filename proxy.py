@@ -402,6 +402,7 @@ class BuildDataset:
         self.proxy = proxy
         self.path_data = self.config.path.data_oracle
         self.shuffle_data = self.config.proxy.data.shuffle
+        self.normalize_data = self.config.proxy.data.norm
         self.seed_data = self.config.proxy.data.seed
 
         self.load_dataset()
@@ -412,7 +413,8 @@ class BuildDataset:
 
         # Targets of training
         self.targets = np.array(dataset["energies"])
-        self.targets = (self.targets - np.mean(self.targets)) / np.std(self.targets)
+        if self.normalize_data:
+            self.targets = (self.targets - np.mean(self.targets)) / np.std(self.targets)
         # Samples of training
         samples = dataset["samples"]
         self.samples = samples

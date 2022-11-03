@@ -4,6 +4,7 @@ debug : True
 al:
   n_iter: 10
   queries_per_it: 100
+  mode: False
 
 path :
   data_oracle : "./storage/data_oracle/database.npy"
@@ -12,15 +13,26 @@ path :
   model_oracle_MLP : "./storage/model_oracle/oracle_MLP"
 
 env:
-  main : "aptamers"
-  dict_size : 4
-  min_len : 10
-  max_len : 20
-  min_word_len : 1
-  max_word_len : 1
+  main : "grid" #grid aptamers
+  aptamers:
+    dict_size : 4
+    min_len : 10
+    max_len : 20
+    min_word_len : 1
+    max_word_len : 1
+  grid:
+    n_dim: 2
+    length: 3
+    min_step_length: 1
+    max_step_length: 1
+    cell_min: -1
+    cell_max: 1
+  reward_beta: 4
+  reward_norm: 1.0
+  reward_func: "boltzmann"
 
 oracle:
-  main : "mlp"
+  main : "nupack" #corners nupack
   init_dataset:
     seed : 0
     init_len : 100
@@ -36,6 +48,7 @@ proxy:
   data:
     shuffle: True
     seed : 10
+    norm: True
 
 gflownet:
   policy_model : "mlp"
@@ -48,7 +61,7 @@ gflownet:
     seed : 1
     random_action_prob : 0.1
   training:
-    pct_batch_empirical : 0.1
+    pct_batch_empirical : 0.0 # ratio of offline samples (0.0 or 0.1)
     batch_size : 16
     training_steps : 500
     clip_grad_norm : 10
@@ -63,7 +76,7 @@ gflownet:
     ttsr : 3
 
 acquisition:
-  main: "proxy"
+  main: "oracle" #oracle in absence of active learning
   
 
   

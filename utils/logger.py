@@ -19,13 +19,12 @@ class Logger:
     def __init__(self, config):
         self.config = config
         date_time = datetime.today().strftime("%d/%m-%H:%M:%S")
-        run_name = "{}_proxy{}_oracle{}_gfn{}_minLen{}_maxLen{}_{}".format(
+        run_name = "al{}_{}_proxy{}_oracle{}_gfn{}_{}".format(
+            config.al.mode,
             config.env.main.upper(),
             config.proxy.model.upper(),
             config.oracle.main.upper(),
             config.gflownet.policy_model.upper(),
-            config.env.aptamers.min_len,
-            config.env.aptamers.max_len,
             date_time,
         )
         self.run = wandb.init(
@@ -37,12 +36,14 @@ class Logger:
         self.context = context
 
     def log_metric(self, key, value, use_context=True):
-        if use_context:
+        if use_context and self.context != "":
             key = self.context + "/" + key
         wandb.log({key: value})
 
     def log_histogram(self, key, value, use_context=True):
-        if use_context:
+        # need this condition for when we are training gfn without active learning and context = ""
+        # we can't make use_context=False because then when the same gfn is used with AL, context won't be recorded (undesirable)
+        if use_context and self.context != "":
             key = self.context + "/" + key
         fig = plt.figure()
         plt.hist(value)

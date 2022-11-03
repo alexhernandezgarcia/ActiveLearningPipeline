@@ -93,6 +93,8 @@ class EnvBase:
 
     def acq2reward(self, acq_values):
         """
+        Args: array of scores
+
         Prepares the output of an oracle for GFlowNet: the inputs proxy_vals is
         expected to be a negative value (energy), unless self.denorm_proxy is True. If
         the latter, the proxy values are first de-normalized according to the mean and
@@ -117,6 +119,7 @@ class EnvBase:
 
     def reward2acq(self, reward):
         """
+        Args: array of boltzmann/power rewards
         Converts a "GFlowNet reward" into a (negative) energy or values as returned by
         an oracle.
         """
@@ -140,22 +143,25 @@ class EnvAptamers(EnvBase):
     def __init__(self, config, acq) -> None:
         super().__init__(config, acq)
         self.device = self.config.device
-
+        # determine max length of state
         self.max_seq_len = self.config.env.aptamers.max_len
-        self.min_seq_len = self.config.env.aptamers.min_len
+        self.pad_len = self.max_seq_len + 1
+        # prepare action space
         self.max_word_len = self.config.env.aptamers.max_word_len
         self.min_word_len = self.config.env.aptamers.min_word_len
-        self.pad_len = self.max_seq_len + 1
         self.n_alphabet = self.config.env.aptamers.dict_size
-        self.dict_size = self.config.env.aptamers.dict_size + 1 # because of eos (USED IN MLP OUTPUT)
-        self.obs_dim = (self.config.env.aptamers.max_len + 1) * (self.config.env.aptamers.dict_size + 1) # USED IN MLP INPUT
-        self.action_space = self.get_action_space() #Must be after definition of n_alphabet
+        self.action_space = self.get_action_space()
+        # determine ohe dim, and hence output dim of policy
+        self.dict_size = len(self.action_space) + 1
+        # calculate input dim to policy
+        self.obs_dim = self.pad_len * self.dict_size
+        # everything else
+        self.min_seq_len = self.config.env.aptamers.min_len
         self.token_eos = self.get_token_eos(self.action_space)
         self.min_reward = 1e-8
         self.reward_beta = self.config.env.reward_beta
         self.reward_norm = self.config.env.reward_norm
         self.reward_func = self.config.env.reward_func
-        self.denorm_proxy = False
         self.env_class = EnvAptamers
         self.init_env()
 
@@ -302,40 +308,27 @@ class EnvGrid(EnvBase):
     def __init__(self, config, acq) -> None:
         super().__init__(config, acq)
         self.device = self.config.device
+        # determine max length of state
         self.n_dim = self.config.env.grid.n_dim
-        # self.length = self.config.env.grid.length
-        self.max_seq_len = self.config.env.grid.length
         self.pad_len = self.n_dim
+        # prepare action space
         self.min_step_len = self.config.env.grid.min_step_length
         self.max_step_len = self.config.env.grid.max_step_length
-        self.cell_min= self.config.env.grid.cell_min
-        self.cell_max= self.config.env.grid.cell_max
-        # self.env_id= None #??????
-        self.reward_beta= self.config.env.reward_beta
-        self.reward_norm= self.config.env.reward_norm
-        self.reward_func= self.config.env.reward_func
-        self.env_class = EnvGrid
-        self.obs_dim = self.max_seq_len * self.n_dim
-        self.cells = np.linspace(self.cell_min, self.cell_max, self.max_seq_len)
-
-        # ??????
-        # self.oracle_func= self.config.oracle
-        # self.oracle = {
-        #     "default": None,
-        #     "cos_N": self.func_cos_N,
-        #     "corners": self.func_corners,
-        #     "corners_floor_A": self.func_corners_floor_A,
-        #     "corners_floor_B": self.func_corners_floor_B,
-        # }[self.oracle_func] # ??????
-
         self.action_space = self.get_action_space()
-        # used only in manip2policy to decide ohe size
-        self.dict_size = len(self.action_space)+1
+        # determine ohe dim, ie, max state len, and hence output dim of policy
+        self.max_seq_len = self.config.env.grid.length
+        self.dict_size = len(self.action_space) + 1
+        # calculate input dim to policy
+        self.obs_dim = self.pad_len * self.dict_size
+        # everything else
         self.token_eos = self.get_token_eos(self.action_space)
         self.min_reward = 1e-8
+        self.reward_beta = self.config.env.reward_beta
+        self.reward_norm = self.config.env.reward_norm
+        self.reward_func = self.config.env.reward_func
+        self.env_class = EnvGrid
+        self.init_env()
 
-        self.init_env()        
-        
     def create_new_env(self, idx):
         env = EnvGrid(self.config, self.acq)
         env.init_env(idx)
@@ -354,7 +347,9 @@ class EnvGrid(EnvBase):
 
     def get_action_space(self):
         """
-        Constructs list with all possible actions
+        Returns list with all possible actions.
+        Example:
+            actions = [(0,), (1,)]
         """
         valid_steplens = np.arange(self.min_step_len, self.max_step_len + 1)
         dims = [a for a in range(self.n_dim)]
@@ -363,7 +358,7 @@ class EnvGrid(EnvBase):
             actions_r = [el for el in itertools.product(dims, repeat=r)]
             actions += actions_r
         return actions
-    
+
     def get_token_eos(self, action_space):
         return len(action_space)
 
@@ -372,17 +367,17 @@ class EnvGrid(EnvBase):
 
     def reward2acq(self, reward):
         return super().reward2acq(reward)
-        
+
     def get_mask(self):
         """
-        Returns a vector of length the action space + 1: True if action is invalid
-        given the current state, False otherwise.
+        Returns a vector of length the action space + 1:
+        True if action is invalid given the current state, False otherwise.
         """
 
         # if state is None:
-            # state = self.state.copy()
+        # state = self.state.copy()
         # if done is None:
-            # done = self.done
+        # done = self.done
         if self.done:
             return [0 for _ in range(len(self.action_space) + 1)]
         mask = [1 for _ in range(len(self.action_space) + 1)]
@@ -392,9 +387,8 @@ class EnvGrid(EnvBase):
                     mask[idx] = 0
                     break
         return mask
-    
-    # TODO: implement obs2state, readable2state, state2readable if required
 
+    # TODO: implement obs2state, readable2state, state2readable if required
 
     def get_parents(self, backward=False):
         """
@@ -460,7 +454,7 @@ class EnvGrid(EnvBase):
             state_next = self.state.copy()
             # action is already a list so no need to do the following I guess
             # if action.ndim == 0:
-                # action = [action]
+            # action = [action]
             for a in action:
                 state_next[a] += 1
             if any([s >= self.max_seq_len for s in state_next]):
@@ -513,57 +507,3 @@ class EnvGrid(EnvBase):
 
     def manip2base(self, state):
         return state
-        # seq_manip = state
-        # if seq_manip[-1] == self.token_eos:
-        #     seq_base = seq_manip[:-1]
-        #     return seq_base
-        # else:
-        #     raise TypeError
-
-    # @staticmethod
-    # def func_corners(x_list):
-    #     def _func_corners(x):
-    #         ax = abs(x)
-    #         return -1.0 * (
-    #             (ax > 0.5).prod(-1) * 0.5
-    #             + ((ax < 0.8) * (ax > 0.6)).prod(-1) * 2
-    #             + 1e-1
-    #         )
-
-    #     return np.asarray([_func_corners(x) for x in x_list])
-
-    # @staticmethod
-    # def func_corners_floor_B(x_list):
-    #     def _func_corners_floor_B(x_list):
-    #         ax = abs(x)
-    #         return -1.0 * (
-    #             (ax > 0.5).prod(-1) * 0.5
-    #             + ((ax < 0.8) * (ax > 0.6)).prod(-1) * 2
-    #             + 1e-2
-    #         )
-
-    #     return np.asarray([_func_corners_floor_B(x) for x in x_list])
-
-    # @staticmethod
-    # def func_corners_floor_A(x_list):
-    #     def _func_corners_floor_A(x_list):
-    #         ax = abs(x)
-    #         return -1.0 * (
-    #             (ax > 0.5).prod(-1) * 0.5
-    #             + ((ax < 0.8) * (ax > 0.6)).prod(-1) * 2
-    #             + 1e-3
-    #         )
-
-    #     return np.asarray([_func_corners_floor_A(x) for x in x_list])
-
-    # @staticmethod
-    # def func_cos_N(x_list):
-    #     def _func_cos_N(x_list):
-    #         ax = abs(x)
-    #         return -1.0 * (((np.cos(x * 50) + 1) * norm.pdf(x * 5)).prod(-1) + 0.01)
-
-    #     return np.asarray([_func_cos_N(x) for x in x_list])
-
-
-
-

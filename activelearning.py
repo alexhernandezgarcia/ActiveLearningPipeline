@@ -18,29 +18,30 @@ class ActiveLearning:
     """
     AL Global pipeline : so far it is a class (the config is easily passed on to all
     methods), very simple, but it can be a single simple function
+
+    Bao's comments:
+    assume we have a config object that we can pass to all the components of the
+    pipeline like in the previous code, eg "config_test.yaml"
+    setup function that creates the directories to save data, ...'
+
     """
 
     def __init__(self, config):
-        # assume we have a config object that we can pass to all the components of the
-        # pipeline like in the previous code, eg "config_test.yaml"
-        # setup function that creates the directories to save data, ...'
         self.config = config
         self.setup()
-        # util class to handle the statistics during training
         self.logger = Logger(self.config)
-        # load the main components of the AL pipeline
         self.oracle = Oracle(self.config, self.logger)
         self.proxy = Proxy(self.config, self.logger)
         self.acq = AcquisitionFunction(self.config, self.proxy)
-        self.env = Env(self.config, self.acq)
-        self.gflownet = GFlowNet(self.config, self.logger, self.env)
-        self.querier = Querier(self.config, self.gflownet)
+        self.gfn_agent = GflownetAgent(self.config, self.logger, self.acq)
+        # self.env = Env(self.config, self.acq)
+        # self.gflownet = GFlowNet(self.config, self.logger, self.env)
+        # self.querier = Querier(self.config, self.gflownet)
 
     def run_pipeline(self):
-        self.iter = None
-        # we initialize the first dataset
+        # intialise iter so that doesnt lead to error in logging stats of initial dataset
+        # self.iter = None
         self.oracle.initialize_dataset()
-        # we run each round of active learning
         for self.iter in range(self.config.al.n_iter):
             self.logger.set_context("iter{}".format(self.iter + 1))
             self.iterate()
@@ -48,10 +49,7 @@ class ActiveLearning:
 
     def iterate(self):
         self.proxy.train()
-        self.gflownet.train()
-        queries = self.querier.build_query()
-        print(queries)
-        energies = self.oracle.score(queries)
+        queries, energies = self.gfn_agent.run_pipeline()
         self.oracle.update_dataset(queries, energies)
 
     def setup(self):
@@ -60,35 +58,42 @@ class ActiveLearning:
         """
         return
 
+
 class GflownetAgent:
     """
-    AL Global pipeline : so far it is a class (the config is easily passed on to all
-    methods), very simple, but it can be a single simple function
+    Trains the policy network on the oracle rewards in the absence of the active learning setting
     """
 
-    def __init__(self, config):
-        # assume we have a config object that we can pass to all the components of the
-        # pipeline like in the previous code, eg "config_test.yaml"
-        # self.config = OmegaConf.load(config)
-        # setup function that creates the directories to save data, ...
+    def __init__(self, config, logger=None, acq=None):
         self.config = config
         self.setup()
-        # util class to handle the statistics during training
-        self.logger = Logger(self.config)
-        # load the main components of the AL pipeline
+        # initalise logger object
+        if logger == None:
+            self.logger = Logger(self.config)
+        # use same logger object as that of active learning
+        else:
+            self.logger = logger
+
         self.oracle = Oracle(self.config, self.logger)
-        self.acq = AcquisitionFunction(self.config, self.oracle)
+
+        if acq == None:
+            self.acq = AcquisitionFunction(self.config, self.oracle)
+        else:
+            # in case it is an active learning pipeline, you need proxy in acq
+            # proxy is only in al pipeline
+            # if no al, then acq is oracle
+            self.acq = acq
+
         self.env = Env(self.config, self.acq)
         self.gflownet = GFlowNet(self.config, self.logger, self.env)
         self.querier = Querier(self.config, self.gflownet)
 
     def run_pipeline(self):
-        # we initialize the dataset
-        # self.oracle.initialize_dataset()
         self.gflownet.train()
         queries = self.querier.build_query()
         energies = self.oracle.score(queries)
-        self.logger.finish()
+        # self.logger.finish()
+        return queries, energies
 
     def setup(self):
         """
@@ -99,11 +104,12 @@ class GflownetAgent:
 
 if __name__ == "__main__":
     # TODO : activelearning pipeline as a simple function, without the class ?
-    config_test_name = "/home/mila/n/nikita.saxena/ActiveLearningPipeline/config_test.yaml"
+    config_test_name = "./config_test.yaml"
     config = OmegaConf.load(config_test_name)
     if config.al.mode == True:
         al = ActiveLearning(config=config)
         al.run_pipeline()
     else:
         gfn = GflownetAgent(config=config)
-        gfn.run_pipeline()
+        queries, energies = gfn.run_pipeline()
+        gfn.logger.finish()

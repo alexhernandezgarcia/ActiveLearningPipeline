@@ -114,7 +114,9 @@ class GFlowNet:
             return lr_scheduler
 
         if new_model:
-            self.model = self.model_class(self.config, self.env.obs_dim, self.env.action_space)
+            self.model = self.model_class(
+                self.config, self.env.obs_dim, self.env.dict_size
+            )
             self.opt = make_opt(self.model.parameters(), self.config)
 
             if self.device == "cuda":
@@ -130,7 +132,9 @@ class GFlowNet:
             path_best_model = self.path_model
             if os.path.exists(path_best_model):
                 checkpoint = torch.load(path_best_model)
-                self.best_model = self.model_class(self.config, self.env.obs_dim, self.env.action_space)
+                self.best_model = self.model_class(
+                    self.config, self.env.obs_dim, self.env.dict_size
+                )
                 self.best_model.load_state_dict(checkpoint["model_state_dict"])
                 self.best_opt = make_opt(self.best_model.parameters(), self.config)
                 self.best_opt.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -140,7 +144,9 @@ class GFlowNet:
                 print(
                     "the best previous model could not be loaded, random gfn for best model"
                 )
-                self.best_model = self.model_class(self.config, self.env.obs_dim, self.env.action_space)
+                self.best_model = self.model_class(
+                    self.config, self.env.obs_dim, self.env.dict_size
+                )
                 self.best_opt = make_opt(self.best_model.parameters(), self.config)
                 self.best_lr_scheduler = make_lr_scheduler(self.best_opt, self.config)
 
@@ -297,11 +303,11 @@ class GFlowNet:
 
         Returns: batch, a list
         Each item in the batch is a list of 8 elements (all tensors except [6]):
-                - [0] the state, (one hot encoded) 
+                - [0] the state, (one hot encoded)
                 - [1] the action
                 - [2] mask
                 - [3] reward of the state
-                - [4] all parents of the state (one hot encoded) 
+                - [4] all parents of the state (one hot encoded)
                 - [5] actions that lead to the state from each parent
                 - [6] done [True, False]
                 - [7] path id: identifies each path
@@ -591,7 +597,7 @@ Utils Buffer
 
 class Buffer:
     """
-    Buffer of data : 
+    Buffer of data :
     - loads the data from oracle and put the best ones as offline training data
     - maintains a replay buffer composed of the best trajectories sampled for training
     """
@@ -655,7 +661,7 @@ class Activation(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self, config, obs_dim, action_space):
+    def __init__(self, config, obs_dim, dict_size):
         super().__init__()
 
         self.config = config
@@ -665,7 +671,7 @@ class MLP(nn.Module):
         # self.input_max_length = self.config.env.max_len + 1
         # self.input_classes = self.config.env.dict_size + 1
         self.init_layer_size = obs_dim
-        self.final_layer_size = len(action_space) +1 #3
+        self.final_layer_size = dict_size  # 3
 
         self.filters = 256
         self.layers = 16

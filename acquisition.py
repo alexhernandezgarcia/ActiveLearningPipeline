@@ -42,7 +42,7 @@ class AcquisitionFunctionBase:
     """
 
     @abstractmethod
-    def __init__(self, config, proxy):
+    def __init__(self, config, proxy=None):
         self.config = config
         self.proxy = proxy
         self.device = self.config.device
@@ -109,7 +109,7 @@ class AcquisitionFunctionOracle(AcquisitionFunctionBase):
     def __init__(self, config, proxy):
         super().__init__(config, proxy)
 
-    def get_reward_batch(self, inputs_af_base):  
+    def get_reward_batch(self, inputs_af_base):
         super().get_reward_batch(inputs_af_base)
         # this uses oraclebase specific functions not oracle
         # inputs_af = torch.stack(list(map(self.proxy.base2oracle, inputs_af_base))) #self.proxy.base2oracle(inputs_af_base)
