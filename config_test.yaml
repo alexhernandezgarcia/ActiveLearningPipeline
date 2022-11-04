@@ -61,6 +61,9 @@ gflownet:
     lr_decay_period : 1.0e+6
     lr_decay_gamma : 0.75
     ttsr : 3
+  test:
+    mode: True
+    path: "./storage/data_grid/corners_d2l3_r0.csv"
 
 acquisition:
   main: "proxy"

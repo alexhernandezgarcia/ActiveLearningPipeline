@@ -565,7 +565,7 @@ class Buffer:
     def __init__(self, config):
         self.config = config
         self.path_data_oracle = self.config.path.data_oracle
-
+        self.test_path = self.config.gflownet.test.path
         self.rng = np.random.default_rng(47)  # to parametrize
 
     def np2df(self):
@@ -584,16 +584,20 @@ class Buffer:
         return df
 
     def make_train_test_set(self):
-        df = self.np2df()
-        indices = self.rng.permutation(len(df.index))
-        n_tt = int(0.1 * len(indices))
-        indices_tt = indices[:n_tt]
-        indices_tr = indices[n_tt:]
-        df.loc[indices_tt, "test"] = True
-        df.loc[indices_tr, "train"] = True
-
-        self.train = df.loc[df.train]
-        self.test = df.loc[df.test]
+        if self.path_data_oracle is not None:
+            df = self.np2df()
+            indices = self.rng.permutation(len(df.index))
+            n_tt = int(0.1 * len(indices))
+            indices_tt = indices[:n_tt]
+            indices_tr = indices[n_tt:]
+            df.loc[indices_tt, "test"] = True
+            df.loc[indices_tr, "train"] = True
+            self.train = df.loc[df.train]
+            self.test = df.loc[df.test]
+        else:
+            raise FileNotFoundError
+        if self.config.gflownet.test.mode == True and self.test_path is not None:
+            self.test = pd.read_csv(self.test_path, index_col=0)
 
 
 """
