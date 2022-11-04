@@ -1,4 +1,4 @@
-device : "cpu"
+device : "cuda"
 debug : True
 
 al:
@@ -49,6 +49,7 @@ proxy:
     shuffle: True
     seed : 10
     norm: True
+  dropout_samples: 20
 
 gflownet:
   policy_model : "mlp"
@@ -76,7 +77,11 @@ gflownet:
     ttsr : 3
 
 acquisition:
-  main: "proxy" #oracle in absence of active learning
+  main: "proxy"
+  ucb:
+    kappa: 0.1
+  ei:
+    max_percentile: 80
   
 
   
