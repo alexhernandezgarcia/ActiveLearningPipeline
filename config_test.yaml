@@ -75,12 +75,14 @@ gflownet:
     lr_decay_period : 1.0e+6
     lr_decay_gamma : 0.75
     ttsr : 1
-  test:
-    period: 10
   oracle:
     period: 10
     nsamples: 10
     k: [1, 10]
+  test:
+    mode: True
+    path: "./storage/data_grid/corners_d2l3_r0.csv"
+    period: 10
 
 acquisition:
   main: "oracle"
