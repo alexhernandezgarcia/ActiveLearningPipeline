@@ -52,7 +52,6 @@ class Logger:
         plt.xlabel(key)
         fig = wandb.Image(fig)
         wandb.log({key: fig})
-        # wandb.log({key: wandb.Histogram(value)})
 
     def finish(self):
         wandb.finish()

@@ -669,9 +669,9 @@ class Transformer(nn.Module):
             + list(self.output.parameters())
         )
 
-    def forward(self, x, input_len, mask):
-        x = self.preprocess(x)
-        x = x.to(self.device)
+    def forward(self, x, mask):
+        x = self.preprocess(x.to(torch.int64))
+        # x = x.to(self.device)
         x = self.embedding(x)
         x = self.pos(x)
         x = self.encoder(x, src_key_padding_mask=mask)
