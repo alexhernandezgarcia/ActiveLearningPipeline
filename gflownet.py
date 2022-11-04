@@ -537,7 +537,12 @@ class GFlowNet:
                     zip(self.buffer.test.samples.values, self.buffer.test["energies"]),
                     disable=self.test_period < 10,
                 ):
-                    statestr = statestr.tolist()
+                    if isinstance(statestr, np.ndarray):
+                        statestr = statestr.tolist()
+                    elif isinstance(statestr, str):
+                        statestr = list(map(int, statestr.strip("[]").split(" ")))
+                    else:
+                        raise TypeError
                     path_list, actions = self.env.get_paths(
                         [[statestr]],
                         [[self.env.token_eos]],
