@@ -30,20 +30,20 @@ class Logger:
         self.run = wandb.init(
             config=config, project="ActiveLearningPipeline", name=run_name
         )
-        self.context = ""
+        self.context = "0"
 
     def set_context(self, context):
         self.context = context
 
     def log_metric(self, key, value, use_context=True):
-        if use_context and self.context != "":
+        if use_context:
             key = self.context + "/" + key
         wandb.log({key: value})
 
     def log_histogram(self, key, value, use_context=True):
         # need this condition for when we are training gfn without active learning and context = ""
         # we can't make use_context=False because then when the same gfn is used with AL, context won't be recorded (undesirable)
-        if use_context and self.context != "":
+        if use_context:
             key = self.context + "/" + key
         fig = plt.figure()
         plt.hist(value)

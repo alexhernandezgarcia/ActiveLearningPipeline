@@ -601,8 +601,8 @@ class GFlowNet:
             input_policy: tensor([[1., 0., 0., 1., 0., 0.]])
 
         """
-        seq_manip = state
-        # seq_manip = np.array(state)
+        # seq_manip = state
+        seq_manip = np.array(state)
         initial_len = len(seq_manip)
 
         seq_tensor = torch.from_numpy(seq_manip)
@@ -724,8 +724,8 @@ class MLP(nn.Module):
         self.init_layer_size = obs_dim
         self.final_layer_size = dict_size  # 3
 
-        self.filters = 256
-        self.layers = 16
+        self.filters = 128
+        self.layers = 2
 
         prob_dropout = self.config.gflownet.training.dropout
 
