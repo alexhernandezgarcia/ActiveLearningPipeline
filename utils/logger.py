@@ -6,6 +6,7 @@ import os
 import torch
 import matplotlib.pyplot as plt
 from datetime import datetime
+import numpy as np
 
 
 class Logger:
@@ -50,6 +51,21 @@ class Logger:
         plt.title(key)
         plt.ylabel("Frequency")
         plt.xlabel(key)
+        fig = wandb.Image(fig)
+        wandb.log({key: fig})
+
+    def log_grid(self, key, coordinates, use_context=True):
+        if use_context:
+            key = self.context + "/" + key
+        coordinates = coordinates[1:]
+        x = [coordinate[0] for coordinate in coordinates]
+        y = [coordinate[1] for coordinate in coordinates]
+        fig = plt.figure()
+        plt.xticks([0, 1, 2])
+        plt.yticks([0, 1, 2])
+        plt.hist2d(x, y, cmap=plt.cm.jet)
+        plt.title(key)
+        plt.colorbar()
         fig = wandb.Image(fig)
         wandb.log({key: fig})
 

@@ -27,7 +27,7 @@ env:
     max_step_length: 1
     cell_min: -1
     cell_max: 1
-  reward_beta: 1
+  reward_beta: 1.0
   reward_norm: 1.0
   reward_func: "power"
 
@@ -48,7 +48,7 @@ proxy:
   data:
     shuffle: True
     seed : 10
-    norm: True
+    norm: False
   dropout_samples: 20
 
 gflownet:
@@ -66,14 +66,14 @@ gflownet:
     batch_size : 16
     training_steps : 20000
     clip_grad_norm : 0.0
-    dropout: 0.1
+    dropout: 0.0 #0.1
     opt : "adam"
     adam_beta1 : 0.9
     adam_beta2 : 0.99
     momentum : 0.9
-    learning_rate : 1.0e-3
+    learning_rate : 0.001
     lr_decay_period : 1.0e+6
-    lr_decay_gamma : 0.75
+    lr_decay_gamma : 0.5
     ttsr : 1
   oracle:
     period: 10

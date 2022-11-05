@@ -372,7 +372,7 @@ class GFlowNet:
 
         while envs:
             envs, actions, valids = self.forward_sample(
-                envs, policy="mixt", temperature=self.temperature
+                envs, policy="model", temperature=self.temperature
             )
 
             for env, action, valid in zip(envs, actions, valids):
@@ -717,6 +717,8 @@ class Activation(nn.Module):
             self.activation = F.relu
         elif activation_func == "gelu":
             self.activation = F.gelu
+        elif activation_func == "leaky_relu":
+            self.activation = F.leaky_relu
 
     def forward(self, input):
         return self.activation(input)
@@ -727,21 +729,21 @@ class MLP(nn.Module):
         super().__init__()
 
         self.config = config
-        act_func = "relu"
+        act_func = "leaky_relu" # relu
 
         # Architecture
         self.init_layer_size = obs_dim
         self.final_layer_size = dict_size  # 3
 
         self.filters = 128
-        self.layers = 2
+        self.layers = 1
 
         prob_dropout = self.config.gflownet.training.dropout
 
         # build input and output layers
         self.initial_layer = nn.Linear(self.init_layer_size, self.filters)
         self.initial_activation = Activation(act_func)
-        self.output_layer = nn.Linear(self.filters, self.final_layer_size, bias=False)
+        self.output_layer = nn.Linear(self.filters, self.final_layer_size, bias=True) #bias=Flase
 
         # build hidden layers
         self.lin_layers = []

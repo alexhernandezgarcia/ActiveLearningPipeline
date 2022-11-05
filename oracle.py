@@ -57,6 +57,7 @@ class Oracle:
         data = {}
         data["samples"] = samples
         data["energies"] = self.score(samples, use_context)
+        self.logger.log_grid("coordinate frequency", data["samples"], use_context)
         # print("initial data", data)
         if save:
             np.save(self.path_data, data)
@@ -418,6 +419,7 @@ class OracleGridCorners(OracleBase):
         samples = []
         for i in range(self.init_len):
             samples.extend(
+                # length-1
                 rng.integers(low=0, high=self.length, size=(1,) + (self.n_dim,))
             )
         # convert to list as all other oracles return a list

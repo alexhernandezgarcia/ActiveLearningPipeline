@@ -257,8 +257,12 @@ class EnvAptamers(EnvBase):
         if done:
             if state[-1] == self.token_eos:
                 parents_a = [self.token_eos]
-                parents = [self.state[:-1]]
+                parents = [state[:-1]]
                 if backward:
+                    # in getpaths, backward id true so we need to modify 
+                    # done. but we also need to modify the done of the env 
+                    # in case we are using the self thingy later
+                    # need to ask bao
                     self.done = False
                 return parents, parents_a
             else:
@@ -454,7 +458,7 @@ class EnvGrid(EnvBase):
             parents = []
             actions = []
             for idx, a in enumerate(self.action_space):
-                state_aux = self.state.copy()
+                state_aux = state.copy()
                 for a_sub in a:
                     if state_aux[a_sub] > 0:
                         state_aux[a_sub] -= 1
@@ -515,7 +519,7 @@ class EnvGrid(EnvBase):
         Return:
             rewards: numpy array containing reward of all states terminal and non-terminal
         """
-        rewards = np.zeros(len(done), dtype=float)
+        rewards = np.zeros(len(done), dtype=np.float32)
         final_states = [s for s, d in zip(states, done) if d]
 
         final_rewards = (
