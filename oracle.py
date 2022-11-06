@@ -185,7 +185,8 @@ class OracleMLP(OracleBase):
             raise NotImplementedError
 
         self.model.eval()
-        outputs = - self.model(tensor4oracle) #This MLP toy oracle was trained on the opposite of Nupack energies, so we revert to negative energies with "-"
+        # This MLP toy oracle was trained on the opposite of Nupack energies, so we revert to negative energies with "-"
+        outputs = - self.model(tensor4oracle)
 
         return outputs.squeeze(1).tolist()
 
@@ -225,7 +226,8 @@ class OracleToy(OracleBase):
         return seq
 
     def get_score(self, queries):
-        count_zero = lambda x: - float(np.count_nonzero(x == 1)) #Toy energy : opposite of the number of 1 ie T in the DNA sequence.
+        # Toy energy : opposite of the number of 1 ie T in the DNA sequence.
+        count_zero = lambda x: - float(np.count_nonzero(x == 1))
         outputs = list(map(count_zero, queries))
         return outputs
 
