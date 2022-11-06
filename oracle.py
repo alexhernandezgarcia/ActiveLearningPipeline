@@ -17,7 +17,7 @@ except:
 
 class Oracle:
     """
-    Generic Class for the oracle. 
+    Generic Class for the oracle.
     The different oracles (classes inheriting from OracleBase)
     can be called according to a config param in the method score
     """
@@ -113,7 +113,9 @@ class OracleMLP(OracleBase):
         self.dict_size = self.config.env.dict_size
         self.max_len_mlp = 40  # this MLP was trained with seqs of len max 40
         if self.config.env.max_len > self.max_len_mlp:
-            raise ValueError("The MLP toy oracle can only be called with sequences of max len 40")
+            raise ValueError(
+                "The MLP toy oracle can only be called with sequences of max len 40"
+            )
         self.path_oracle_mlp = self.config.path.model_oracle_MLP
         self.device = torch.device(self.config.device)
 
@@ -186,7 +188,7 @@ class OracleMLP(OracleBase):
 
         self.model.eval()
         # This MLP toy oracle was trained on the opposite of Nupack energies, so we revert to negative energies with "-"
-        outputs = - self.model(tensor4oracle)
+        outputs = -self.model(tensor4oracle)
 
         return outputs.squeeze(1).tolist()
 
@@ -227,7 +229,7 @@ class OracleToy(OracleBase):
 
     def get_score(self, queries):
         # Toy energy : opposite of the number of 1 ie T in the DNA sequence.
-        count_zero = lambda x: - float(np.count_nonzero(x == 1))
+        count_zero = lambda x: -float(np.count_nonzero(x == 1))
         outputs = list(map(count_zero, queries))
         return outputs
 
@@ -282,10 +284,8 @@ class OracleNupack(OracleBase):
 
         return letters
 
-    def get_score(
-        self, queries, returnFunc = "energy"
-    ): 
-        #so far only the energy stats is implemented, the others require adding many parameters (Motif, ...) to be discussed
+    def get_score(self, queries, returnFunc="energy"):
+        # so far only the energy stats is implemented, the others require adding many parameters (Motif, ...) to be discussed
 
         temperature = 310.0  # Kelvin
         ionicStrength = 1.0  # molar
@@ -293,7 +293,7 @@ class OracleNupack(OracleBase):
         sequences = list(map(self.base2oracle, queries))
 
         energies = np.zeros(len(sequences))
-        
+
         strandList = []
         comps = []
         i = -1
@@ -310,16 +310,14 @@ class OracleNupack(OracleBase):
 
         for i in range(len(energies)):
             energies[i] = results[comps[i]].mfe[0].energy
-    
+
         dict_return = {}
-     
+
         if "energy" in returnFunc:
-            dict_return.update(
-                {"energy": energies}
-            )  
+            dict_return.update({"energy": energies})
 
         if isinstance(returnFunc, list):
-            #Never the case for now, returnFunc = "energy"
+            # Never the case for now, returnFunc = "energy"
             if len(returnFunc) > 1:
                 return dict_return
             else:
@@ -334,7 +332,7 @@ ORACLE MODELS ZOO
 """
 ###
 
-#MLP Toy Oracle
+# MLP Toy Oracle
 class Activation(nn.Module):
     def __init__(self, activation_func="relu"):
         super().__init__()

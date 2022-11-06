@@ -532,8 +532,8 @@ class GFlowNet:
 
         return batch
 
-    #TODO : to be removed. Firstly it depends on all the policy networks
-    #Secondly, it should come in the form of a preprocess function called in the forward method of each Model, cf Proxy.py
+    # TODO : to be removed. Firstly it depends on all the policy networks
+    # Secondly, it should come in the form of a preprocess function called in the forward method of each Model, cf Proxy.py
     def manip2policy(self, state):
         seq_manip = state
         initial_len = len(seq_manip)
@@ -559,7 +559,7 @@ Utils Buffer
 
 class Buffer:
     """
-    Buffer of data : 
+    Buffer of data :
     - loads the data from oracle and put the best ones as offline training data
     - maintains a replay buffer composed of the best trajectories sampled for training
     """

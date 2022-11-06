@@ -267,6 +267,7 @@ In the child Classes, the previous abstract methods can be overwritten. In what 
 - The conversion format is given for its input
 """
 
+
 class ProxyMLP(ProxyBase):
     def __init__(self, config, logger, init_model=False):
         super().__init__(config, logger)
