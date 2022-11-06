@@ -75,7 +75,7 @@ class EnvBase:
         """
         raise NotImplementedError
 
-    #TODO: make it specific to each acquisition function rather 
+    # TODO: make it specific to each acquisition function rather
     @abstractmethod
     def acq2rewards(self, acq_values):
         """
@@ -108,7 +108,7 @@ class EnvAptamers(EnvBase):
         self.n_alphabet = self.config.env.dict_size
         self.action_space = self.get_action_space()
         self.token_eos = self.get_token_eos(self.action_space)
-        #Are these parameters (for boltzman and power) environment specific or acquisition function specific ? 
+        # Are these parameters (for boltzman and power) environment specific or acquisition function specific ?
         self.min_reward = 1e-8
         self.reward_beta = 4
         self.reward_norm = 1.0
@@ -175,7 +175,7 @@ class EnvAptamers(EnvBase):
         else:
             parents = []
             actions = []
-            # is this code written to handle cases when the action is not just adding one nucleotide but perhaps adding a subsequence of nucleotides??
+
             for idx, a in enumerate(self.action_space):
                 if self.state[-len(a) :] == list(a):
                     parents.append((self.state[: -len(a)]))

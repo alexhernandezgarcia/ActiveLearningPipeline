@@ -532,6 +532,8 @@ class GFlowNet:
 
         return batch
 
+    #TODO : to be removed. Firstly it depends on all the policy networks
+    #Secondly, it should come in the form of a preprocess function called in the forward method of each Model, cf Proxy.py
     def manip2policy(self, state):
         seq_manip = state
         initial_len = len(seq_manip)
