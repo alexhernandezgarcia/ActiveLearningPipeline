@@ -155,7 +155,7 @@ class AcquisitionFunctionEI(AcquisitionFunctionBase):
 
     def getMinF(self, inputs, input_len, mask):
         # inputs = torch.Tensor(inputs).to(self.config.device)
-
+        #TODO : Why calling differently ?
         if self.config.proxy.model.lower() == "mlp":
             outputs = self.proxy.model(inputs).cpu().detach().numpy()
         elif self.config.proxy.model.lower() == "lstm":

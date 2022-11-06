@@ -32,6 +32,7 @@ class Oracle:
     def init_oracle(self):
         # calling the relevant oracle. All oracles should follow the model of OracleBase
         if self.config.oracle.main == "mlp":
+            #TODO : do not call it proxy
             self.proxy = OracleMLP(self.config)
         elif self.config.oracle.main == "toy":
             self.proxy = OracleToy(self.config)
@@ -402,11 +403,11 @@ class OracleGridCorners(OracleBase):
         super().__init__(config)
         self.init_len = self.config.oracle.init_dataset.init_len
         self.random_seed = self.config.oracle.init_dataset.seed
-        self.length = self.config.env.grid.length
-        self.n_dim = self.config.env.grid.n_dim
-        self.obs_dim = self.length * self.n_dim
-        self.cell_min = self.config.env.grid.cell_min
-        self.cell_max = self.config.env.grid.cell_max
+        self.length = self.config.env.grid.length #3
+        self.n_dim = self.config.env.grid.n_dim #2
+        self.obs_dim = self.length * self.n_dim #isn't it length**dim ??
+        self.cell_min = self.config.env.grid.cell_min #-1
+        self.cell_max = self.config.env.grid.cell_max #1
         self.cells = np.linspace(self.cell_min, self.cell_max, self.length)
 
     def initialize_samples_base(self):

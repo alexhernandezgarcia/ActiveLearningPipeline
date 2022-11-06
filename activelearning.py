@@ -106,4 +106,10 @@ if __name__ == "__main__":
     else:
         gfn = GflownetAgent(config=config)
         queries, energies = gfn.run_pipeline()
+        dico_results = {
+            'queries' : queries,
+            'energies' : energies
+        }
+        print(dico_results)
+        print("proportion of corners found in candidates", dico_results["energies"].count(-0.6)/len(dico_results["energies"]))
         gfn.logger.finish()

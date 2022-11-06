@@ -134,6 +134,7 @@ class GFlowNet:
             print("self.model new model created ! ")
         if best_model:
             path_best_model = self.path_model
+            #TODO : if iteration 0, the best gflownet is a new random one
             if os.path.exists(path_best_model):
                 checkpoint = torch.load(path_best_model)
                 self.best_model = self.model_class(
@@ -367,7 +368,7 @@ class GFlowNet:
             env.done = True
 
         envs = [env for env in envs if not env.done]
-        self.sampling_model = self.best_model
+        self.sampling_model = self.model
         self.sampling_model.eval()
 
         while envs:
