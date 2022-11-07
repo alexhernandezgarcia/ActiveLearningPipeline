@@ -183,7 +183,7 @@ class GFlowNet:
 
         if self.sampling_model == NotImplemented:
             print("weird, the sampling model should be initialized already")
-            self.sampling_model = self.best_model
+            self.sampling_model = self.model # best_model
             self.sampling_model.eval()
 
         states = [env.state for env in envs]
@@ -367,7 +367,7 @@ class GFlowNet:
             env.done = True
 
         envs = [env for env in envs if not env.done]
-        self.sampling_model = self.best_model
+        self.sampling_model = self.model
         self.sampling_model.eval()
 
         while envs:
@@ -624,6 +624,24 @@ class GFlowNet:
         return to(input_policy)[0]
 
     def logq(self, path_list, actions_list, model, env, device):
+        """
+        path_list: list of all possible paths leading to that particualr state
+        action_list: list of list of actions applied in the corresponding path
+
+        grid example:
+        path_list = [[[2, 2], [1, 2], [0, 2], [0, 1], [0, 0]],
+                    [[2, 2], [1, 2], [1, 1], [0, 1], [0, 0]], 
+                    [[2, 2], [1, 2], [1, 1], [1, 0], [0, 0]], 
+                    [[2, 2], [2, 1], [1, 1], [0, 1], [0, 0]],
+                    [[2, 2], [2, 1], [1, 1], [1, 0], [0, 0]], 
+                    [[2, 2], [2, 1], [2, 0], [1, 0], [0, 0]]]
+        action_list = [[2, 0, 0, 1, 1], 
+                        [2, 0, 1, 0, 1], 
+                        [2, 0, 1, 1, 0], 
+                        [2, 1, 0, 0, 1],
+                        [2, 1, 0, 1, 0], 
+                        [2, 1, 1, 0, 0]]
+        """
         log_q = torch.tensor(1.0)
         for path, actions in zip(path_list, actions_list):
             path = path[::-1]

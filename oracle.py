@@ -440,7 +440,7 @@ class OracleGridCorners(OracleBase):
     def get_score(self, queries):
         """
         Input: list of arrays
-        Output: array of scores
+        Output: list of scores
 
         """
         sequences = list(map(self.base2oracle, queries))
