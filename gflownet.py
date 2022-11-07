@@ -184,14 +184,16 @@ class GFlowNet:
 
         if self.sampling_model == NotImplemented:
             print("weird, the sampling model should be initialized already")
-            self.sampling_model = self.best_model
+            self.sampling_model = self.model#self.best_model
             self.sampling_model.eval()
 
         states = [env.state for env in envs]
+        #print("performing forward sampmling for states", states)
         states_ohe = torch.stack(list(map(self.manip2policy, states))).view(
             len(states), -1
         )
         masks = tf_list([env.get_mask() for env in envs])
+        #print("with masks", masks)
 
         if policy == "model":
             with torch.no_grad():
@@ -251,13 +253,14 @@ class GFlowNet:
             raise NotImplemented
 
         action_logits = torch.where(masks == 1, action_logits, -self.loginf)
+        #print("the logits are", action_logits)
         if all(torch.isfinite(action_logits).flatten()):
             actions = Categorical(logits=action_logits).sample()
         else:
             raise ValueError("Action could not be sampled from model!")
 
         assert len(envs) == actions.shape[0]
-
+        #print("the actions are", actions)
         # Execute actions
         _, _, valids = zip(
             *[env.step([action.tolist()]) for env, action in zip(envs, actions)]
@@ -368,8 +371,9 @@ class GFlowNet:
             env.done = True
 
         envs = [env for env in envs if not env.done]
-        self.sampling_model = self.model
+        self.sampling_model = self.model #self.best_model
         self.sampling_model.eval()
+        #print("we are done with offline samples, it remains", len(envs))
 
         while envs:
             envs, actions, valids = self.forward_sample(
@@ -379,6 +383,7 @@ class GFlowNet:
             for env, action, valid in zip(envs, actions, valids):
                 if valid:
                     parents, parents_a = env.get_parents()
+                    #import pdb; pdb.set_trace()
                     state_ohe = self.manip2policy(env.state)
                     parents_ohe = torch.stack(list(map(self.manip2policy, parents)))
                     mask = env.get_mask()
@@ -399,6 +404,25 @@ class GFlowNet:
                             ),  # convention, we start at 0
                         ]
                     )
+
+                    # print(
+                    #     [
+                    #         state_ohe.unsqueeze(0),
+                    #         tl_list(
+                    #             [int(action)]
+                    #         ),  # don't know why it is a scalar sometime ...
+                    #         tf_list([mask]),
+                    #         env.state,
+                    #         parents_ohe.view(len(parents), -1),
+                    #         tl_list(parents_a),
+                    #         env.done,
+                    #         tl_list([env.id] * len(parents)),
+                    #         tl_list(
+                    #             [env.n_actions_taken - 1]
+                    #         ),  # convention, we start at 0
+                    #     ]
+                    # )
+
             envs = [env for env in envs if not env.done]
 
         (
@@ -505,13 +529,13 @@ class GFlowNet:
     def train(self):
         all_losses = []
 
-        self.make_model(new_model=True, best_model=True)
+        self.make_model(new_model=True, best_model=False)
         self.model.train()
 
         for it in tqdm(range(self.training_steps), disable=not self.view_progress):
-
+            #print("iteration ", it, ", we are collecting new data !")
             data = self.get_training_data(self.batch_size)
-
+            #print("we loaded the data and are ready to train on it")
             for sub_it in range(self.ttsr):
                 self.model.train()
                 loss = self.loss_function(data)
@@ -612,7 +636,7 @@ class GFlowNet:
         initial_len = len(seq_manip)
 
         seq_tensor = torch.from_numpy(seq_manip)
-        seq_ohe = F.one_hot(seq_tensor.long(), num_classes=self.env.dict_size)
+        seq_ohe = F.one_hot(seq_tensor.long(), num_classes=self.env.max_seq_len)
         input_policy = seq_ohe.reshape(1, -1).float()
 
         number_pads = self.env.pad_len - initial_len

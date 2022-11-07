@@ -360,7 +360,7 @@ class EnvGrid(EnvBase):
         self.max_seq_len = self.config.env.grid.length
         self.dict_size = len(self.action_space) + 1
         # calculate input dim to policy
-        self.obs_dim = self.pad_len * self.dict_size
+        self.obs_dim = self.pad_len * self.max_seq_len
         # everything else
         self.token_eos = self.get_token_eos(self.action_space)
         self.min_reward = 1e-8
@@ -488,6 +488,7 @@ class EnvGrid(EnvBase):
         if all([s == self.max_seq_len - 1 for s in self.state]):
             self.done = True
             self.n_actions_taken += 1
+            self.last_action = self.token_eos
             return self.state, [self.token_eos], True
         if action != [self.token_eos]:
             state_next = self.state.copy()
@@ -502,10 +503,12 @@ class EnvGrid(EnvBase):
                 self.state = state_next
                 valid = True
                 self.n_actions_taken += 1
+                self.last_action = action
             return self.state, action, valid
         else:
             self.done = True
             self.n_actions_taken += 1
+            self.last_action = self.token_eos
             return self.state, [self.token_eos], True
 
     def get_reward(self, states, done):
