@@ -30,6 +30,14 @@ class ActiveLearning:
         self.config = config
         self.setup()
         self.logger = Logger(self.config)
+        #  need to initialise logger to None so that the case where wandb.skip = True runs smoothly
+        self.logger = None
+        # setup function that creates the directories to save data, ...
+        self.setup()
+        # util class to handle the statistics during training
+        if self.config.wandb.skip == False:
+            self.logger = Logger(self.config)
+        # load the main components of the AL pipeline
         self.oracle = Oracle(self.config, self.logger)
         self.proxy = Proxy(self.config, self.logger)
         self.acq = AcquisitionFunction(self.config, self.proxy)
@@ -38,9 +46,11 @@ class ActiveLearning:
     def run_pipeline(self):
         self.oracle.initialize_dataset()
         for self.iter in range(self.config.al.n_iter):
-            self.logger.set_context("iter{}".format(self.iter + 1))
+            if self.logger:
+                self.logger.set_context("iter{}".format(self.iter + 1))
             self.iterate()
-        self.logger.finish()
+        if self.logger:
+            self.logger.finish()
 
     def iterate(self):
         self.proxy.train()
@@ -63,7 +73,7 @@ class GflownetAgent:
         self.config = config
         self.setup()
         # initalise logger object
-        if logger == None:
+        if logger == None and self.config.wandb.skip == False:
             self.logger = Logger(self.config)
         # use same logger object as that of active learning
         else:
@@ -106,4 +116,5 @@ if __name__ == "__main__":
     else:
         gfn = GflownetAgent(config=config)
         queries, energies = gfn.run_pipeline()
-        gfn.logger.finish()
+        if gfn.logger:
+            gfn.logger.finish()

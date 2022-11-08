@@ -39,8 +39,10 @@ class GFlowNet:
 
         if self.config.gflownet.loss.function == "flowmatch":
             self.loss_function = self.flowmatch_loss
+            self.Z = None
         elif self.config.gflownet.loss.function == "trajectory_balance":
             self.loss_function = self.trajectory_balance
+            self.Z = nn.Parameter(torch.ones(64) * 150.0 / 64)
         else:
             raise NotImplementedError
 
@@ -51,6 +53,7 @@ class GFlowNet:
         self.get_model_class()
         if load_best_model:
             self.make_model(best_model=True)
+        self.logsoftmax = torch.nn.LogSoftmax(dim=1)
 
         self.load_hyperparameters()
 
@@ -62,7 +65,6 @@ class GFlowNet:
         self.oracle_k = self.config.gflownet.oracle.k
         self.forward_policy = self.config.gflownet.forward_policy
         self.backward_policy = self.config.gflownet.backward_policy
-
 
     def load_hyperparameters(self):
         self.flowmatch_eps = tf_list([self.config.gflownet.loss.flowmatch_eps])
@@ -181,7 +183,7 @@ class GFlowNet:
         temperature : float
             Temperature to adjust the logits by logits /= temperature
         """
-        if policy==None:
+        if policy == None:
             policy = self.forward_policy
 
         if temperature == 0:
@@ -189,7 +191,7 @@ class GFlowNet:
 
         if self.sampling_model == NotImplemented:
             print("weird, the sampling model should be initialized already")
-            self.sampling_model = self.model # best_model
+            self.sampling_model = self.model  # best_model
             self.sampling_model.eval()
 
         states = [env.state for env in envs]
@@ -271,7 +273,7 @@ class GFlowNet:
         return envs, actions, valids
 
     def backward_sample(self, env, policy=None, temperature=0):
-        if policy==None:
+        if policy == None:
             policy = self.backward_policy
 
         if temperature == 0:
@@ -399,7 +401,7 @@ class GFlowNet:
                             ),  # don't know why it is a scalar sometime ...
                             tf_list([mask]),
                             env.state,
-                            parents_ohe.view(len(parents), -1), 
+                            parents_ohe.view(len(parents), -1),
                             tl_list(parents_a),
                             env.done,
                             tl_list([env.id] * len(parents)),
@@ -424,13 +426,16 @@ class GFlowNet:
 
         rewards = self.env.get_reward(input_reward, done)
         terminal_states = rewards[rewards != 0]
-        # mean of just the terminal states
-        self.logger.log_metric("mean_reward", np.mean(terminal_states))
-        self.logger.log_metric("max_reward", np.max(terminal_states))
         proxy_vals = self.env.reward2acq(terminal_states)
-        self.logger.log_metric("mean_proxy_score", np.mean(proxy_vals))
-        self.logger.log_metric("min_proxy_score", np.min(proxy_vals))
-        self.logger.log_metric("max_proxy_score", np.max(proxy_vals))
+
+        if self.logger:
+            self.logger.log_metric("mean_reward", np.mean(terminal_states))
+            self.logger.log_metric("max_reward", np.max(terminal_states))
+            self.logger.log_metric("mean_proxy_score", np.mean(proxy_vals))
+            self.logger.log_metric("min_proxy_score", np.min(proxy_vals))
+            self.logger.log_metric("max_proxy_score", np.max(proxy_vals))
+        # mean of just the terminal states
+
         rewards = [tf_list([r]) for r in rewards]
         done = [tl_list([d]) for d in done]
 
@@ -501,7 +506,7 @@ class GFlowNet:
 
         child_Qsa = q_out * (1 - done) - self.loginf * done
 
-        out_flow = torch.logaddexp(torch.log(rewards + self.flowmatch_eps), child_Qsa) 
+        out_flow = torch.logaddexp(torch.log(rewards + self.flowmatch_eps), child_Qsa)
 
         # LOSS
         loss = (in_flow - out_flow).pow(2).mean()
@@ -509,7 +514,32 @@ class GFlowNet:
         return loss
 
     def trajectory_balance(self, data):
-        pass
+        (
+            _,
+            _,
+            masks,
+            rewards,
+            parents,
+            parents_a,
+            done,
+            path_id_parents,
+            _,
+        ) = zip(*data)
+        path_id = torch.cat([el[:1] for el in path_id_parents])
+        rewards, parents, parents_a, done, path_id_parents = map(
+            torch.cat, [rewards, parents, parents_a, done, path_id_parents]
+        )
+        # Log probs of each (s, a)
+        logprobs = self.logsoftmax(self.model(parents))[
+            torch.arange(parents.shape[0]), parents_a
+        ]
+        # Sum of log probs
+        sumlogprobs = tf_list(
+            torch.zeros(len(torch.unique(path_id, sorted=True)))
+        ).index_add_(0, path_id_parents, logprobs)
+        rewards = rewards[done.eq(1)][torch.argsort(path_id[done.eq(1)])]
+        loss = (self.Z.sum() + sumlogprobs - torch.log((rewards))).pow(2).mean()
+        return loss
 
     def train(self):
         all_losses = []
@@ -524,7 +554,8 @@ class GFlowNet:
             for sub_it in range(self.ttsr):
                 self.model.train()
                 loss = self.loss_function(data)
-                self.logger.log_metric("policy_train_loss", loss.item())
+                if self.logger:
+                    self.logger.log_metric("policy_train_loss", loss.item())
                 if not torch.isfinite(loss):
                     print("loss is not finite - skipping iteration")
 
@@ -561,8 +592,9 @@ class GFlowNet:
                         self.logq(path_list, actions, self.model, self.env, self.device)
                     )
                 corr = np.corrcoef(data_logq, self.buffer.test["energies"])
-                self.logger.log_metric("test_corr_logq_score", corr[0, 1])
-                self.logger.log_metric("test_mean_logq", np.mean(data_logq))
+                if self.logger:
+                    self.logger.log_metric("test_corr_logq_score", corr[0, 1])
+                    self.logger.log_metric("test_mean_logq", np.mean(data_logq))
 
             # if (it%self.oracle_period):
             # queries = self.gflownet.sample_queries(self.oracle_nsamples)
@@ -641,16 +673,16 @@ class GFlowNet:
 
         grid example:
         path_list = [[[2, 2], [1, 2], [0, 2], [0, 1], [0, 0]],
-                    [[2, 2], [1, 2], [1, 1], [0, 1], [0, 0]], 
-                    [[2, 2], [1, 2], [1, 1], [1, 0], [0, 0]], 
+                    [[2, 2], [1, 2], [1, 1], [0, 1], [0, 0]],
+                    [[2, 2], [1, 2], [1, 1], [1, 0], [0, 0]],
                     [[2, 2], [2, 1], [1, 1], [0, 1], [0, 0]],
-                    [[2, 2], [2, 1], [1, 1], [1, 0], [0, 0]], 
+                    [[2, 2], [2, 1], [1, 1], [1, 0], [0, 0]],
                     [[2, 2], [2, 1], [2, 0], [1, 0], [0, 0]]]
-        action_list = [[2, 0, 0, 1, 1], 
-                        [2, 0, 1, 0, 1], 
-                        [2, 0, 1, 1, 0], 
+        action_list = [[2, 0, 0, 1, 1],
+                        [2, 0, 1, 0, 1],
+                        [2, 0, 1, 1, 0],
                         [2, 1, 0, 0, 1],
-                        [2, 1, 0, 1, 0], 
+                        [2, 1, 0, 1, 0],
                         [2, 1, 1, 0, 0]]
         """
         log_q = torch.tensor(1.0)
@@ -758,7 +790,7 @@ class MLP(nn.Module):
         super().__init__()
 
         self.config = config
-        act_func = "leaky_relu" # relu
+        act_func = "leaky_relu"  # relu
 
         # Architecture
         self.init_layer_size = obs_dim
@@ -772,7 +804,9 @@ class MLP(nn.Module):
         # build input and output layers
         self.initial_layer = nn.Linear(self.init_layer_size, self.filters)
         self.initial_activation = Activation(act_func)
-        self.output_layer = nn.Linear(self.filters, self.final_layer_size, bias=True) #bias=Flase
+        self.output_layer = nn.Linear(
+            self.filters, self.final_layer_size, bias=True
+        )  # bias=Flase
 
         # build hidden layers
         self.lin_layers = []

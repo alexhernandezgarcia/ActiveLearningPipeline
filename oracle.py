@@ -71,10 +71,10 @@ class Oracle:
         Output: array. array.shape=(init_len,)
         """
         scores = self.proxy.get_score(queries)
-
-        self.logger.log_histogram("oracle_energy", scores, use_context)
-        self.logger.log_metric("min_oracle_energy", np.min(scores), use_context)
-        self.logger.log_metric("mean_oracle_energy", np.mean(scores), use_context)
+        if self.logger:
+            self.logger.log_histogram("oracle_energy", scores, use_context)
+            self.logger.log_metric("min_oracle_energy", np.min(scores), use_context)
+            self.logger.log_metric("mean_oracle_energy", np.mean(scores), use_context)
         return scores
 
     def update_dataset(self, queries, energies):
