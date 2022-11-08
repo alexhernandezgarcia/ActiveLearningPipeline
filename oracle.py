@@ -58,7 +58,7 @@ class Oracle:
         data["samples"] = samples
         data["energies"] = self.score(samples, use_context)
         self.logger.log_grid("coordinate frequency", data["samples"], use_context)
-        # print("initial data", data)
+        print("initial data", data)
         if save:
             np.save(self.path_data, data)
         if return_data:
@@ -447,11 +447,12 @@ class OracleGridCorners(OracleBase):
 
         def _func_corners(x):
             ax = abs(x)
-            return -1.0 * (
+            energy = -1.0 * (
                 (ax > 0.5).prod(-1) * 0.5
                 + ((ax < 0.8) * (ax > 0.6)).prod(-1) * 2
                 + 1e-1
             )
+            return energy
 
         return np.asarray([_func_corners(x) for x in sequences]).tolist()
 

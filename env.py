@@ -249,6 +249,13 @@ class EnvAptamers(EnvBase):
             return mask
 
     def get_parents(self, backward=False, state=None, done=None):
+        """
+        In forward sampling, it operates on self.stae
+        But in the function getPaths(), we need to find parents of a particular state so we give the input parameter state.
+        Returns:
+            parents: (not one hot encoded)
+            actions: called parents_a in the main code and is the last performed action
+        """
         if state is None:
             state = self.state.copy()
         if done is None:
@@ -360,7 +367,7 @@ class EnvGrid(EnvBase):
         self.max_seq_len = self.config.env.grid.length
         self.dict_size = len(self.action_space) + 1
         # calculate input dim to policy
-        self.obs_dim = self.pad_len * self.dict_size
+        self.obs_dim = self.pad_len * self.max_seq_len
         # everything else
         self.token_eos = self.get_token_eos(self.action_space)
         self.min_reward = 1e-8
@@ -443,7 +450,7 @@ class EnvGrid(EnvBase):
         Returns
         -------
         parents : list
-            List of parents as state2obs(state)
+            List of parents (not one hot encoded)
         actions : list
             List of actions that lead to state for each parent in parents
         """

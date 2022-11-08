@@ -7,10 +7,10 @@ al:
   mode: False
 
 path :
-  data_oracle : "/home/mila/n/nikita.saxena/ActiveLearningPipeline/storage/data_oracle/database.npy"
-  model_proxy : "/home/mila/n/nikita.saxena/ActiveLearningPipeline/storage/model_proxy/proxy"
-  model_gfn : "/home/mila/n/nikita.saxena/ActiveLearningPipeline/storage/model_gfn/gfn"
-  model_oracle_MLP : "/home/mila/n/nikita.saxena/ActiveLearningPipeline/storage/model_oracle/oracle_MLP"
+  data_oracle : "./storage/data_oracle/database.npy"
+  model_proxy : "./storage/model_proxy/proxy"
+  model_gfn : "./storage/model_gfn/gfn"
+  model_oracle_MLP : "./storage/model_oracle/oracle_MLP"
 
 env:
   main : "grid" #grid aptamers
@@ -53,9 +53,11 @@ proxy:
 
 gflownet:
   policy_model : "mlp"
+  forward_policy: "mixt"
+  backward_policy: "model"
   loss : 
     function: "flowmatch"
-    flowmatch_eps: 1.0e-5
+    flowmatch_eps: 1e-5
   view_progress : True
   sampling:
     temperature : 1.0
@@ -81,7 +83,7 @@ gflownet:
     k: [1, 10]
   test:
     mode: True
-    path: "/home/mila/n/nikita.saxena/ActiveLearningPipeline/storage/data_grid/corners_d2l3_r0.csv"
+    path: "./storage/data_grid/corners_d2l3_r0.csv"
     period: 10
 
 acquisition:

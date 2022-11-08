@@ -54,12 +54,15 @@ class GFlowNet:
 
         self.load_hyperparameters()
 
-        self.loginf = tf_list([1e6])
+        self.loginf = tf_list([1e3])
         self.buffer = Buffer(self.config)
         self.test_period = self.config.gflownet.test.period
         self.oracle_period = self.config.gflownet.oracle.period
         self.oracle_nsamples = self.config.gflownet.oracle.nsamples
         self.oracle_k = self.config.gflownet.oracle.k
+        self.forward_policy = self.config.gflownet.forward_policy
+        self.backward_policy = self.config.gflownet.backward_policy
+
 
     def load_hyperparameters(self):
         self.flowmatch_eps = tf_list([self.config.gflownet.loss.flowmatch_eps])
@@ -163,7 +166,7 @@ class GFlowNet:
 
             self.best_lr_scheduler = make_lr_scheduler(self.best_opt, self.config)
 
-    def forward_sample(self, envs, policy, temperature=0):
+    def forward_sample(self, envs, policy=None, temperature=0):
         """
         Performs a forward action on each environment of a list.
 
@@ -178,6 +181,9 @@ class GFlowNet:
         temperature : float
             Temperature to adjust the logits by logits /= temperature
         """
+        if policy==None:
+            policy = self.forward_policy
+
         if temperature == 0:
             temperature = self.temperature
 
@@ -264,7 +270,10 @@ class GFlowNet:
 
         return envs, actions, valids
 
-    def backward_sample(self, env, policy, temperature=0):
+    def backward_sample(self, env, policy=None, temperature=0):
+        if policy==None:
+            policy = self.backward_policy
+
         if temperature == 0:
             temperature = self.config.gflownet.sampling.temperature
 
@@ -337,7 +346,7 @@ class GFlowNet:
                 previous_done = env.done
                 previous_mask = env.get_mask()
                 env, parents, parents_a = self.backward_sample(
-                    env, policy="model", temperature=self.temperature
+                    env, temperature=self.temperature
                 )
                 # for backward sampling, the last action is updated after
                 previous_action = env.last_action
@@ -370,9 +379,10 @@ class GFlowNet:
         self.sampling_model = self.model
         self.sampling_model.eval()
 
+        # Online policy
         while envs:
             envs, actions, valids = self.forward_sample(
-                envs, policy="model", temperature=self.temperature
+                envs, temperature=self.temperature
             )
 
             for env, action, valid in zip(envs, actions, valids):
@@ -389,7 +399,7 @@ class GFlowNet:
                             ),  # don't know why it is a scalar sometime ...
                             tf_list([mask]),
                             env.state,
-                            parents_ohe.view(len(parents), -1),
+                            parents_ohe.view(len(parents), -1), 
                             tl_list(parents_a),
                             env.done,
                             tl_list([env.id] * len(parents)),
@@ -491,7 +501,7 @@ class GFlowNet:
 
         child_Qsa = q_out * (1 - done) - self.loginf * done
 
-        out_flow = torch.log(self.flowmatch_eps + rewards + torch.exp(child_Qsa))
+        out_flow = torch.logaddexp(torch.log(rewards + self.flowmatch_eps), child_Qsa) 
 
         # LOSS
         loss = (in_flow - out_flow).pow(2).mean()
@@ -531,7 +541,7 @@ class GFlowNet:
                 if sub_it == 0:
                     all_losses.append(loss.item())
 
-            if (it % self.test_period == 0) and self.buffer.test is not None:
+            if not it % self.test_period and self.buffer.test is not None:
                 data_logq = []
                 for statestr, score in tqdm(
                     zip(self.buffer.test.samples.values, self.buffer.test["energies"]),
@@ -582,7 +592,7 @@ class GFlowNet:
 
         while envs:
             envs, actions, valids = self.forward_sample(
-                envs, policy="model", temperature=self.temperature
+                envs, policy="mixt", temperature=self.temperature
             )
 
             remaining_envs = []
@@ -604,6 +614,7 @@ class GFlowNet:
         Grid Example:
             state: array([0, 0])
             input_policy: tensor([[1., 0., 0., 1., 0., 0.]])
+            input_policy is a tensor of shape(length*n_dim, )
 
         """
         # seq_manip = state
@@ -611,7 +622,7 @@ class GFlowNet:
         initial_len = len(seq_manip)
 
         seq_tensor = torch.from_numpy(seq_manip)
-        seq_ohe = F.one_hot(seq_tensor.long(), num_classes=self.env.dict_size)
+        seq_ohe = F.one_hot(seq_tensor.long(), num_classes=self.env.max_seq_len)
         input_policy = seq_ohe.reshape(1, -1).float()
 
         number_pads = self.env.pad_len - initial_len
