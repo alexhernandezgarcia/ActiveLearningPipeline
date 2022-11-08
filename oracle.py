@@ -57,7 +57,8 @@ class Oracle:
         data = {}
         data["samples"] = samples
         data["energies"] = self.score(samples, use_context)
-        self.logger.log_grid("coordinate frequency", data["samples"], use_context)
+        if self.logger:
+            self.logger.log_grid("coordinate frequency", data["samples"], use_context)
         print("initial data", data)
         if save:
             np.save(self.path_data, data)
@@ -75,6 +76,7 @@ class Oracle:
             self.logger.log_histogram("oracle_energy", scores, use_context)
             self.logger.log_metric("min_oracle_energy", np.min(scores), use_context)
             self.logger.log_metric("mean_oracle_energy", np.mean(scores), use_context)
+            self.logger.log_grid("coordinate frequency", queries, use_context)
         return scores
 
     def update_dataset(self, queries, energies):

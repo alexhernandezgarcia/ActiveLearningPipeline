@@ -396,7 +396,7 @@ class EnvGrid(EnvBase):
         """
         Returns list with all possible actions.
         Example:
-            actions = [(0,), (1,)]
+            actions = [(0,), (1,)] when grid.ndim = 2
         """
         valid_steplens = np.arange(self.min_step_len, self.max_step_len + 1)
         dims = [a for a in range(self.n_dim)]
