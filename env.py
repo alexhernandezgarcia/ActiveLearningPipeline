@@ -186,8 +186,9 @@ class EnvAptamers(EnvBase):
         self.action_space = self.get_action_space()
         # determine ohe dim, and hence output dim of policy
         self.dict_size = len(self.action_space) + 1
+        self.ohe_dim = len(self.action_space) + 1
         # calculate input dim to policy
-        self.obs_dim = self.pad_len * self.dict_size
+        self.obs_dim = self.pad_len * self.ohe_dim
         # everything else
         self.min_seq_len = self.config.env.aptamers.min_len
         self.token_eos = self.get_token_eos(self.action_space)
@@ -266,8 +267,8 @@ class EnvAptamers(EnvBase):
                 parents_a = [self.token_eos]
                 parents = [state[:-1]]
                 if backward:
-                    # in getpaths, backward id true so we need to modify 
-                    # done. but we also need to modify the done of the env 
+                    # in getpaths, backward id true so we need to modify
+                    # done. but we also need to modify the done of the env
                     # in case we are using the self thingy later
                     # need to ask bao
                     self.done = False
@@ -358,6 +359,7 @@ class EnvGrid(EnvBase):
         self.device = self.config.device
         # determine max length of state
         self.n_dim = self.config.env.grid.n_dim
+        # pad_len required for manip2policy
         self.pad_len = self.n_dim
         # prepare action space
         self.min_step_len = self.config.env.grid.min_step_length
@@ -365,9 +367,12 @@ class EnvGrid(EnvBase):
         self.action_space = self.get_action_space()
         # determine ohe dim, ie, max state len, and hence output dim of policy
         self.max_seq_len = self.config.env.grid.length
+        # ohe_dim required for manip2policy
+        self.ohe_dim = self.config.env.grid.length
+        # dict_size required for final layer dim of mlp
         self.dict_size = len(self.action_space) + 1
         # calculate input dim to policy
-        self.obs_dim = self.pad_len * self.max_seq_len
+        self.obs_dim = self.pad_len * self.ohe_dim
         # everything else
         self.token_eos = self.get_token_eos(self.action_space)
         self.min_reward = 1e-8

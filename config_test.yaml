@@ -11,7 +11,7 @@ al:
 
 path :
   data_oracle : "./storage/data_oracle/database.npy"
-  model_proxy : "./storage/model_proxy/proxy"
+  model_proxy : ./storage/model_proxy/proxy"
   model_gfn : "./storage/model_gfn/gfn"
   model_oracle_MLP : "./storage/model_oracle/oracle_MLP"
 
@@ -19,8 +19,8 @@ env:
   main : "grid" #grid aptamers
   aptamers:
     dict_size : 4
-    min_len : 10
-    max_len : 20
+    min_len : 30
+    max_len : 30
     min_word_len : 1
     max_word_len : 1
   grid:
@@ -32,7 +32,7 @@ env:
     cell_max: 1
   reward_beta: 1.0
   reward_norm: 1.0
-  reward_func: "power"
+  reward_func: "power"  #power
 
 oracle:
   main : "corners" #corners nupack
@@ -69,7 +69,7 @@ gflownet:
   training:
     pct_batch_empirical : 0.0 # ratio of offline samples (0.0 or 0.1)
     batch_size : 16
-    training_steps : 20000
+    training_steps : 5000
     clip_grad_norm : 0.0
     dropout: 0.0 #0.1
     opt : "adam"

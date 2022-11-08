@@ -29,7 +29,6 @@ class ActiveLearning:
     def __init__(self, config):
         self.config = config
         self.setup()
-        self.logger = Logger(self.config)
         #  need to initialise logger to None so that the case where wandb.skip = True runs smoothly
         self.logger = None
         # setup function that creates the directories to save data, ...

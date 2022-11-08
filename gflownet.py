@@ -654,7 +654,7 @@ class GFlowNet:
         initial_len = len(seq_manip)
 
         seq_tensor = torch.from_numpy(seq_manip)
-        seq_ohe = F.one_hot(seq_tensor.long(), num_classes=self.env.max_seq_len)
+        seq_ohe = F.one_hot(seq_tensor.long(), num_classes=self.env.ohe_dim)
         input_policy = seq_ohe.reshape(1, -1).float()
 
         number_pads = self.env.pad_len - initial_len
