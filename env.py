@@ -55,7 +55,7 @@ class EnvBase:
         raise NotImplementedError
 
     @abstractmethod
-    def get_mask(self):
+    def get_mask_invalid_actions(self):
         """
         for sampling in GFlownet and masking in the loss function
         """
@@ -139,21 +139,25 @@ class EnvAptamers(EnvBase):
     def get_token_eos(self, action_space):
         return len(action_space)
 
-    def get_mask(self):
-
-        mask = [1] * (len(self.action_space) + 1)
+    def get_mask_invalid_actions(self):
+        """
+        Returns a vector of length the action space + 1: True if action is invalid
+        given the current state, False otherwise.
+        """
+        # begin with assumption that none of the actions are invalid
+        mask = [0] * (len(self.action_space) + 1)
 
         if self.done:
-            return [0 for _ in mask]
+            return [1 for _ in mask]
 
         seq_len = len(self.state)
 
         if seq_len < self.min_seq_len:
-            mask[self.token_eos] = 0
+            mask[self.token_eos] = 1
             return mask
 
         elif seq_len == self.max_seq_len:
-            mask[: self.token_eos] = [0] * len(self.action_space)
+            mask[: self.token_eos] = [1] * len(self.action_space)
             return mask
 
         else:
