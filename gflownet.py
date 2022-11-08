@@ -398,10 +398,11 @@ class GFlowNet:
 
         rewards = self.env.get_reward(input_reward, done)
         terminal_states = rewards[rewards != 0]
-        # mean of just the terminal states
-        self.logger.log_metric("rewards", np.mean(terminal_states))
         proxy_vals = self.env.reward2acq(terminal_states)
-        self.logger.log_metric("proxy_vals", np.mean(proxy_vals))
+        # mean of just the terminal states
+        if self.logger:
+            self.logger.log_metric("rewards", np.mean(terminal_states))
+            self.logger.log_metric("proxy_vals", np.mean(proxy_vals))
         rewards = [tf_list([r]) for r in rewards]
         done = [tl_list([d]) for d in done]
 
@@ -505,7 +506,8 @@ class GFlowNet:
             for sub_it in range(self.ttsr):
                 self.model.train()
                 loss = self.loss_function(data)
-                self.logger.log_metric("policy_train_loss", loss.item())
+                if self.logger:
+                    self.logger.log_metric("policy_train_loss", loss.item())
                 if not torch.isfinite(loss):
                     print("loss is not finite - skipping iteration")
 

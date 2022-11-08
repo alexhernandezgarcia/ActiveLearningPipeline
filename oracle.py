@@ -17,7 +17,7 @@ except:
 
 class Oracle:
     """
-    Generic Class for the oracle. 
+    Generic Class for the oracle.
     The different oracles (classes inheriting from OracleBase)
     can be called according to a config param in the method score
     """
@@ -60,8 +60,8 @@ class Oracle:
         Calls the specific oracle (class/function) and apply its "get_score" method on the dataset
         """
         scores = self.oracle.get_score(queries)
-
-        self.logger.log_histogram("oracle_energies", scores, use_context)
+        if self.logger:
+            self.logger.log_histogram("oracle_energies", scores, use_context)
         return scores
 
     def update_dataset(self, queries, energies):

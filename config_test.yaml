@@ -1,6 +1,9 @@
 device : "cpu"
 debug : True
 
+wandb:
+  skip: True
+
 al:
   n_iter: 10
   queries_per_it: 100

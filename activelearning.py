@@ -24,10 +24,13 @@ class ActiveLearning:
         # assume we have a config object that we can pass to all the components of the
         # pipeline like in the previous code, eg "config_test.yaml"
         self.config = OmegaConf.load(config)
+        #  need to initialise logger to None so that the case where wandb.skip = True runs smoothly
+        self.logger = None
         # setup function that creates the directories to save data, ...
         self.setup()
         # util class to handle the statistics during training
-        self.logger = Logger(self.config)
+        if self.config.wandb.skip == False:
+            self.logger = Logger(self.config)
         # load the main components of the AL pipeline
         self.oracle = Oracle(self.config, self.logger)
         self.proxy = Proxy(self.config, self.logger)
@@ -42,9 +45,11 @@ class ActiveLearning:
         self.oracle.initialize_dataset()
         # we run each round of active learning
         for self.iter in range(self.config.al.n_iter):
-            self.logger.set_context("iter{}".format(self.iter + 1))
+            if self.logger:
+                self.logger.set_context("iter{}".format(self.iter + 1))
             self.iterate()
-        self.logger.finish()
+        if self.logger:
+            self.logger.finish()
 
     def iterate(self):
         self.proxy.train()
