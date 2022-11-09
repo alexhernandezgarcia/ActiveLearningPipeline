@@ -690,12 +690,18 @@ class GFlowNet:
             path = path[::-1]
             actions = actions[::-1]
             path_ohe = torch.stack(list(map(self.manip2policy, path)))
+            done = [0] * len(path)
+            # done[-1] = 1
             # following would be required for transformer and rnn if they are implemented
             path_len = len(path)
-            mask = None
+            masks = tf_list(
+                [env.get_mask(path[idx], done[idx]) for idx in range(len(path))]
+            )
             with torch.no_grad():
                 # TODO: potentially mask invalid actions next_q
                 logits_path = model(path_ohe)
+            # modify logits_path
+            logits_path = torch.where(masks == 1, logits_path, -self.loginf)
             logsoftmax = torch.nn.LogSoftmax(dim=1)
             logprobs_path = logsoftmax(logits_path)
             log_q_path = torch.tensor(0.0)
