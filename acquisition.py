@@ -155,14 +155,7 @@ class AcquisitionFunctionEI(AcquisitionFunctionBase):
 
     def getMinF(self, inputs, input_len, mask):
         # inputs = torch.Tensor(inputs).to(self.config.device)
-
-        if self.config.proxy.model.lower() == "mlp":
-            outputs = self.proxy.model(inputs).cpu().detach().numpy()
-        elif self.config.proxy.model.lower() == "lstm":
-            outputs = self.proxy.model(inputs, input_len).cpu().detach().numpy()
-        elif self.config.proxy.model.lower() == "transformer":
-            outputs = self.proxy.model(inputs, None).cpu().detach().numpy()
-
+        outputs = self.proxy.model(inputs, input_len, mask).cpu().detach().numpy()
         self.best_f = np.percentile(outputs, self.config.acquisition.ei.max_percentile)
 
     def get_reward_batch(self, inputs_af_base):  # inputs_af = list of ...
