@@ -57,7 +57,7 @@ class EnvBase:
         raise NotImplementedError
 
     @abstractmethod
-    def get_mask(self):
+    def get_mask(self, state=None, done=None):
         """
         for sampling in GFlownet and masking in the loss function
         """
@@ -229,7 +229,12 @@ class EnvAptamers(EnvBase):
     def reward2acq(self, reward):
         return super().reward2acq(reward)
 
-    def get_mask(self):
+    def get_mask(self, state=None, done=None):
+        
+        if state is None:
+            state = self.state.copy()
+        if done is None:
+            done = self.done
 
         mask = [1] * (len(self.action_space) + 1)
 
@@ -420,22 +425,22 @@ class EnvGrid(EnvBase):
     def reward2acq(self, reward):
         return super().reward2acq(reward)
 
-    def get_mask(self):
+    def get_mask(self, state=None, done=None):
         """
         Returns a vector of length the action space + 1:
         True if action is invalid given the current state, False otherwise.
         """
 
-        # if state is None:
-        # state = self.state.copy()
-        # if done is None:
-        # done = self.done
-        if self.done:
+        if state is None:
+            state = self.state.copy()
+        if done is None:
+            done = self.done
+        if done:
             return [0 for _ in range(len(self.action_space) + 1)]
         mask = [1 for _ in range(len(self.action_space) + 1)]
         for idx, a in enumerate(self.action_space):
             for d in a:
-                if self.state[d] + 1 >= self.max_seq_len:
+                if state[d] + 1 >= self.max_seq_len:
                     mask[idx] = 0
                     break
         return mask
