@@ -6,6 +6,7 @@ import os
 import torch
 import matplotlib.pyplot as plt
 from datetime import datetime
+import numpy as np
 
 
 class Logger:
@@ -19,19 +20,18 @@ class Logger:
     def __init__(self, config):
         self.config = config
         date_time = datetime.today().strftime("%d/%m-%H:%M:%S")
-        run_name = "proxy{}_oracle{}_gfn{}_acq{}_minLen{}_maxLen{}_{}".format(
+        run_name = "al{}_{}_proxy{}_oracle{}_gfn{}_{}".format(
+            config.al.mode,
+            config.env.main.upper(),
             config.proxy.model.upper(),
             config.oracle.main.upper(),
             config.gflownet.policy_model.upper(),
-            config.acquisition.main.upper(),
-            config.env.min_len,
-            config.env.max_len,
             date_time,
         )
         self.run = wandb.init(
             config=config, project="ActiveLearningPipeline", name=run_name
         )
-        self.context = ""
+        self.context = "0"
 
     def set_context(self, context):
         self.context = context
@@ -42,6 +42,8 @@ class Logger:
         wandb.log({key: value})
 
     def log_histogram(self, key, value, use_context=True):
+        # need this condition for when we are training gfn without active learning and context = ""
+        # we can't make use_context=False because then when the same gfn is used with AL, context won't be recorded (undesirable)
         if use_context:
             key = self.context + "/" + key
         fig = plt.figure()
@@ -49,6 +51,21 @@ class Logger:
         plt.title(key)
         plt.ylabel("Frequency")
         plt.xlabel(key)
+        fig = wandb.Image(fig)
+        wandb.log({key: fig})
+
+    def log_grid(self, key, coordinates, use_context=True):
+        if use_context:
+            key = self.context + "/" + key
+        coordinates = coordinates[1:]
+        x = [coordinate[0] for coordinate in coordinates]
+        y = [coordinate[1] for coordinate in coordinates]
+        fig = plt.figure()
+        plt.xticks([0, 1, 2])
+        plt.yticks([0, 1, 2])
+        plt.hist2d(x, y, cmap=plt.cm.jet)
+        plt.title(key)
+        plt.colorbar()
         fig = wandb.Image(fig)
         wandb.log({key: fig})
 

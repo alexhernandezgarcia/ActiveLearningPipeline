@@ -1,26 +1,41 @@
 device : "cuda"
 debug : True
 
+wandb:
+  skip: True
+
 al:
   n_iter: 10
   queries_per_it: 100
+  mode: False
 
 path :
   data_oracle : "./storage/data_oracle/database.npy"
-  model_proxy : "./storage/model_proxy/proxy"
+  model_proxy : ./storage/model_proxy/proxy"
   model_gfn : "./storage/model_gfn/gfn"
   model_oracle_MLP : "./storage/model_oracle/oracle_MLP"
 
 env:
-  main : "aptamers"
-  dict_size : 4
-  min_len : 10
-  max_len : 20
-  min_word_len : 1
-  max_word_len : 1
+  main : "grid" #grid aptamers
+  aptamers:
+    dict_size : 4
+    min_len : 30
+    max_len : 30
+    min_word_len : 1
+    max_word_len : 1
+  grid:
+    n_dim: 2
+    length: 3
+    min_step_length: 1
+    max_step_length: 1
+    cell_min: -1
+    cell_max: 1
+  reward_beta: 1.0
+  reward_norm: 1.0
+  reward_func: "power"  #power
 
 oracle:
-  main : "nupack"
+  main : "corners" #corners nupack
   init_dataset:
     seed : 0
     init_len : 100
@@ -36,37 +51,46 @@ proxy:
   data:
     shuffle: True
     seed : 10
+    norm: False
   dropout_samples: 20
 
 gflownet:
   policy_model : "mlp"
+  forward_policy: "mixt"
+  backward_policy: "model"
   loss : 
     function: "flowmatch"
-    flowmatch_eps: 1.0e-10
+    flowmatch_eps: 1e-5
   view_progress : True
   sampling:
-    temperature : 1
+    temperature : 1.0
     seed : 1
     random_action_prob : 0.1
   training:
-    pct_batch_empirical : 0.1
+    pct_batch_empirical : 0.0 # ratio of offline samples (0.0 or 0.1)
     batch_size : 16
-    training_steps : 500
-    clip_grad_norm : 10
-    dropout: 0.1
+    training_steps : 5000
+    clip_grad_norm : 0.0
+    dropout: 0.0 #0.1
     opt : "adam"
     adam_beta1 : 0.9
-    adam_beta2 : 0.99
-    momentum : 0.8
-    learning_rate : 1.0e-3
+    adam_beta2 : 0.999
+    momentum : 0.9
+    learning_rate : 0.001
     lr_decay_period : 1.0e+6
-    lr_decay_gamma : 0.75
-    ttsr : 3
+    lr_decay_gamma : 0.5
+    ttsr : 1
+  oracle:
+    period: 10
+    nsamples: 10
+    k: [1, 10]
   test:
-    period: 100
+    mode: True
+    path: "./storage/data_grid/corners_d2l3_r0.csv"
+    period: 10
 
 acquisition:
-  main: "ei"
+  main: "oracle"
   ucb:
     kappa: 0.1
   ei:

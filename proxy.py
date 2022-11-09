@@ -175,7 +175,8 @@ class ProxyBase:
         self.model.train(True)
         for i, trainData in enumerate(tr):
             loss = self.get_loss(trainData)
-            self.logger.log_metric("proxy_train_mse", loss.item())
+            if self.logger:
+                self.logger.log_metric("proxy_train_mse", loss.item())
             err_tr.append(loss.data)
             self.optimizer.zero_grad()
             loss.backward()
@@ -190,7 +191,8 @@ class ProxyBase:
         with torch.no_grad():
             for i, testData in enumerate(te):
                 loss = self.get_loss(testData)
-                self.logger.log_metric("proxy_val_mse", loss.item())
+                if self.logger:
+                    self.logger.log_metric("proxy_val_mse", loss.item())
                 err_te.append(loss.data)
 
         self.err_te_hist.append(torch.mean(torch.stack(err_te)).cpu().detach().numpy())
@@ -392,6 +394,7 @@ class BuildDataset:
         self.proxy = proxy
         self.path_data = self.config.path.data_oracle
         self.shuffle_data = self.config.proxy.data.shuffle
+        self.normalize_data = self.config.proxy.data.norm
         self.seed_data = self.config.proxy.data.seed
 
         self.load_dataset()
@@ -402,7 +405,8 @@ class BuildDataset:
 
         # Targets of training
         self.targets = np.array(dataset["energies"])
-        self.targets = (self.targets - np.mean(self.targets)) / np.std(self.targets)
+        if self.normalize_data:
+            self.targets = (self.targets - np.mean(self.targets)) / np.std(self.targets)
         # Samples of training
         samples = dataset["samples"]
         self.samples = samples
@@ -504,8 +508,10 @@ class MLP(nn.Module):
         self.device = config.device
         act_func = "relu"
 
-        self.input_max_length = self.config.env.max_len
-        self.input_classes = self.config.env.dict_size
+        # self.input_max_length = self.config.env.aptamers.max_len
+        self.input_max_length = self.config.env.grid.n_dim
+        # self.input_classes = self.config.env.aptamers.dict_size
+        self.input_classes = self.config.env.grid.length
         self.out_dim = 1
         self.transformerCall = transformerCall
 
@@ -667,9 +673,9 @@ class Transformer(nn.Module):
             + list(self.output.parameters())
         )
 
-    def forward(self, x, input_len, mask):
-        x = self.preprocess(x)
-        x = x.to(self.device)
+    def forward(self, x, mask):
+        x = self.preprocess(x.to(torch.int64))
+        # x = x.to(self.device)
         x = self.embedding(x)
         x = self.pos(x)
         x = self.encoder(x, src_key_padding_mask=mask)

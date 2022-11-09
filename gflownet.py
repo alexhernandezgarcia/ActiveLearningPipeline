@@ -57,9 +57,14 @@ class GFlowNet:
 
         self.load_hyperparameters()
 
-        self.loginf = tf_list([1e6])
+        self.loginf = tf_list([1e3])
         self.buffer = Buffer(self.config)
         self.test_period = self.config.gflownet.test.period
+        self.oracle_period = self.config.gflownet.oracle.period
+        self.oracle_nsamples = self.config.gflownet.oracle.nsamples
+        self.oracle_k = self.config.gflownet.oracle.k
+        self.forward_policy = self.config.gflownet.forward_policy
+        self.backward_policy = self.config.gflownet.backward_policy
 
     def load_hyperparameters(self):
         self.flowmatch_eps = tf_list([self.config.gflownet.loss.flowmatch_eps])
@@ -118,7 +123,9 @@ class GFlowNet:
             return lr_scheduler
 
         if new_model:
-            self.model = self.model_class(self.config)
+            self.model = self.model_class(
+                self.config, self.env.obs_dim, self.env.dict_size
+            )
             self.opt = make_opt(self.model.parameters(), self.config)
 
             if self.device == "cuda":
@@ -134,7 +141,9 @@ class GFlowNet:
             path_best_model = self.path_model
             if os.path.exists(path_best_model):
                 checkpoint = torch.load(path_best_model)
-                self.best_model = self.model_class(self.config)
+                self.best_model = self.model_class(
+                    self.config, self.env.obs_dim, self.env.dict_size
+                )
                 self.best_model.load_state_dict(checkpoint["model_state_dict"])
                 self.best_opt = make_opt(self.best_model.parameters(), self.config)
                 self.best_opt.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -144,7 +153,9 @@ class GFlowNet:
                 print(
                     "the best previous model could not be loaded, random gfn for best model"
                 )
-                self.best_model = self.model_class(self.config)
+                self.best_model = self.model_class(
+                    self.config, self.env.obs_dim, self.env.dict_size
+                )
                 self.best_opt = make_opt(self.best_model.parameters(), self.config)
                 self.best_lr_scheduler = make_lr_scheduler(self.best_opt, self.config)
 
@@ -157,34 +168,30 @@ class GFlowNet:
 
             self.best_lr_scheduler = make_lr_scheduler(self.best_opt, self.config)
 
-    def forward_sample(self, envs, policy, temperature=0):
+    def forward_sample(self, envs, policy=None, temperature=0):
         """
         Performs a forward action on each environment of a list.
 
         Args
         ----
-        env : list of GFlowNetEnv or derived
-            A list of instances of the environment
-
-        times : dict
-            Dictionary to store times
+        env : list of instances of the environment (EnvBase or derived)
 
         policy : string
             - model: uses self.model to obtain the sampling probabilities.
             - uniform: samples uniformly from the action space.
 
-        model : torch model
-            Model to use as policy if policy="model"
-
         temperature : float
             Temperature to adjust the logits by logits /= temperature
         """
+        if policy == None:
+            policy = self.forward_policy
+
         if temperature == 0:
             temperature = self.temperature
 
         if self.sampling_model == NotImplemented:
             print("weird, the sampling model should be initialized already")
-            self.sampling_model = self.best_model
+            self.sampling_model = self.model  # best_model
             self.sampling_model.eval()
 
         states = [env.state for env in envs]
@@ -265,7 +272,10 @@ class GFlowNet:
 
         return envs, actions, valids
 
-    def backward_sample(self, env, policy, temperature=0):
+    def backward_sample(self, env, policy=None, temperature=0):
+        if policy == None:
+            policy = self.backward_policy
+
         if temperature == 0:
             temperature = self.config.gflownet.sampling.temperature
 
@@ -298,9 +308,25 @@ class GFlowNet:
 
     def get_training_data(self, batch_size):
         """
+        Args:
+            batch_size: int
+
+        Function:
         Calls the buffer to get some interesting training data
         Performs backward sampling for off policy data and forward sampling
         Calls the utils method forward sampling and backward sampling
+
+        Returns: batch, a list
+        Each item in the batch is a list of 8 elements (all tensors except [6]):
+                - [0] the state, (one hot encoded)
+                - [1] the action
+                - [2] mask
+                - [3] reward of the state
+                - [4] all parents of the state (one hot encoded)
+                - [5] actions that lead to the state from each parent
+                - [6] done [True, False]
+                - [7] path id: identifies each path
+                - [8] state id: identifies each state within a path
         """
 
         batch = []
@@ -322,7 +348,7 @@ class GFlowNet:
                 previous_done = env.done
                 previous_mask = env.get_mask()
                 env, parents, parents_a = self.backward_sample(
-                    env, policy="model", temperature=self.temperature
+                    env, temperature=self.temperature
                 )
                 # for backward sampling, the last action is updated after
                 previous_action = env.last_action
@@ -352,12 +378,13 @@ class GFlowNet:
             env.done = True
 
         envs = [env for env in envs if not env.done]
-        self.sampling_model = self.best_model
+        self.sampling_model = self.model
         self.sampling_model.eval()
 
+        # Online policy
         while envs:
             envs, actions, valids = self.forward_sample(
-                envs, policy="mixt", temperature=self.temperature
+                envs, temperature=self.temperature
             )
 
             for env, action, valid in zip(envs, actions, valids):
@@ -399,13 +426,16 @@ class GFlowNet:
 
         rewards = self.env.get_reward(input_reward, done)
         terminal_states = rewards[rewards != 0]
-        # mean of just the terminal states
-        self.logger.log_metric("mean_reward", np.mean(terminal_states))
-        self.logger.log_metric("max_reward", np.max(terminal_states))
         proxy_vals = self.env.reward2acq(terminal_states)
-        self.logger.log_metric("mean_proxy_score", np.mean(proxy_vals))
-        self.logger.log_metric("min_proxy_score", np.min(proxy_vals))
-        self.logger.log_metric("max_proxy_score", np.max(proxy_vals))
+
+        if self.logger:
+            self.logger.log_metric("mean_reward", np.mean(terminal_states))
+            self.logger.log_metric("max_reward", np.max(terminal_states))
+            self.logger.log_metric("mean_proxy_score", np.mean(proxy_vals))
+            self.logger.log_metric("min_proxy_score", np.min(proxy_vals))
+            self.logger.log_metric("max_proxy_score", np.max(proxy_vals))
+        # mean of just the terminal states
+
         rewards = [tf_list([r]) for r in rewards]
         done = [tl_list([d]) for d in done]
 
@@ -426,6 +456,21 @@ class GFlowNet:
         return batch
 
     def flowmatch_loss(self, data):
+
+        """
+        Args: data: list of tuples where  each item in data is a list of 8 elements (all tensors):
+                - [0] the state, as state2obs(state)
+                - [1] the action
+                - [2] mask of invalid actions
+                - [3] reward of the state
+                - [4] all parents of the state
+                - [5] actions that lead to the state from each parent
+                - [6] done [True, False]
+                - [7] path id: identifies each path
+                - [8] state id: identifies each state within a path
+        Returns:
+            loss
+        """
         self.model.train()
 
         # for inputflow, id of parents
@@ -461,7 +506,7 @@ class GFlowNet:
 
         child_Qsa = q_out * (1 - done) - self.loginf * done
 
-        out_flow = torch.log(self.flowmatch_eps + rewards + torch.exp(child_Qsa))
+        out_flow = torch.logaddexp(torch.log(rewards + self.flowmatch_eps), child_Qsa)
 
         # LOSS
         loss = (in_flow - out_flow).pow(2).mean()
@@ -493,7 +538,8 @@ class GFlowNet:
             torch.zeros(len(torch.unique(path_id, sorted=True)))
         ).index_add_(0, path_id_parents, logprobs)
         rewards = rewards[done.eq(1)][torch.argsort(path_id[done.eq(1)])]
-        loss = (self.Z.sum() + sumlogprobs - torch.log((rewards))).pow(2).mean()
+        loss = (self.Z.sum() + sumlogprobs - torch.log((rewards.clamp(min=1e-32)))).pow(2).mean()
+        print("loss gfn", loss.item())
         return loss
 
     def train(self):
@@ -509,7 +555,8 @@ class GFlowNet:
             for sub_it in range(self.ttsr):
                 self.model.train()
                 loss = self.loss_function(data)
-                self.logger.log_metric("policy_train_loss", loss.item())
+                if self.logger:
+                    self.logger.log_metric("policy_train_loss", loss.item())
                 if not torch.isfinite(loss):
                     print("loss is not finite - skipping iteration")
 
@@ -526,13 +573,18 @@ class GFlowNet:
                 if sub_it == 0:
                     all_losses.append(loss.item())
 
-            if (it % self.test_period == 0) and self.buffer.test is not None:
+            if not it % self.test_period and self.buffer.test is not None:
                 data_logq = []
                 for statestr, score in tqdm(
                     zip(self.buffer.test.samples.values, self.buffer.test["energies"]),
                     disable=self.test_period < 10,
                 ):
-                    statestr = statestr.tolist()
+                    if isinstance(statestr, np.ndarray):
+                        statestr = statestr.tolist()
+                    elif isinstance(statestr, str):
+                        statestr = list(map(int, statestr.strip("[]").split(" ")))
+                    else:
+                        raise TypeError
                     path_list, actions = self.env.get_paths(
                         [[statestr]],
                         [[self.env.token_eos]],
@@ -541,8 +593,12 @@ class GFlowNet:
                         self.logq(path_list, actions, self.model, self.env, self.device)
                     )
                 corr = np.corrcoef(data_logq, self.buffer.test["energies"])
-                self.logger.log_metric("test_corr_logq_score", corr[0, 1])
-                self.logger.log_metric("test_mean_logq", np.mean(data_logq))
+                if self.logger:
+                    self.logger.log_metric("test_corr_logq_score", corr[0, 1])
+                    self.logger.log_metric("test_mean_logq", np.mean(data_logq))
+
+            # if (it%self.oracle_period):
+            # queries = self.gflownet.sample_queries(self.oracle_nsamples)
 
         # save model
         path = self.path_model
@@ -569,7 +625,7 @@ class GFlowNet:
 
         while envs:
             envs, actions, valids = self.forward_sample(
-                envs, policy="model", temperature=self.temperature
+                envs, policy="mixt", temperature=self.temperature
             )
 
             remaining_envs = []
@@ -583,14 +639,26 @@ class GFlowNet:
         return batch
 
     def manip2policy(self, state):
+        """
+        Args:
+            state: array
+            input_policy: tensor on desired device
+
+        Grid Example:
+            state: array([0, 0])
+            input_policy: tensor([[1., 0., 0., 1., 0., 0.]])
+            input_policy is a tensor of shape(length*n_dim, )
+
+        """
+        # seq_manip = state
         seq_manip = np.array(state)
         initial_len = len(seq_manip)
 
-        seq_tensor = torch.Tensor(seq_manip)
-        seq_ohe = F.one_hot(seq_tensor.long(), num_classes=self.env.n_alphabet + 1)
+        seq_tensor = torch.from_numpy(seq_manip)
+        seq_ohe = F.one_hot(seq_tensor.long(), num_classes=self.env.ohe_dim)
         input_policy = seq_ohe.reshape(1, -1).float()
 
-        number_pads = self.env.max_seq_len + 1 - initial_len
+        number_pads = self.env.pad_len - initial_len
         if number_pads:
             padding = torch.cat(
                 [torch.tensor([0] * (self.env.n_alphabet + 1))] * number_pads
@@ -600,17 +668,40 @@ class GFlowNet:
         return to(input_policy)[0]
 
     def logq(self, path_list, actions_list, model, env, device):
+        """
+        path_list: list of all possible paths leading to that particualr state
+        action_list: list of list of actions applied in the corresponding path
+
+        grid example:
+        path_list = [[[2, 2], [1, 2], [0, 2], [0, 1], [0, 0]],
+                    [[2, 2], [1, 2], [1, 1], [0, 1], [0, 0]],
+                    [[2, 2], [1, 2], [1, 1], [1, 0], [0, 0]],
+                    [[2, 2], [2, 1], [1, 1], [0, 1], [0, 0]],
+                    [[2, 2], [2, 1], [1, 1], [1, 0], [0, 0]],
+                    [[2, 2], [2, 1], [2, 0], [1, 0], [0, 0]]]
+        action_list = [[2, 0, 0, 1, 1],
+                        [2, 0, 1, 0, 1],
+                        [2, 0, 1, 1, 0],
+                        [2, 1, 0, 0, 1],
+                        [2, 1, 0, 1, 0],
+                        [2, 1, 1, 0, 0]]
+        """
         log_q = torch.tensor(1.0)
         for path, actions in zip(path_list, actions_list):
             path = path[::-1]
             actions = actions[::-1]
             path_ohe = torch.stack(list(map(self.manip2policy, path)))
+            done = [0] * len(path)
             # following would be required for transformer and rnn if they are implemented
             path_len = len(path)
-            mask = None
+            masks = tf_list(
+                [env.get_mask(path[idx], done[idx]) for idx in range(len(path))]
+            )
             with torch.no_grad():
                 # TODO: potentially mask invalid actions next_q
                 logits_path = model(path_ohe)
+            # modify logits_path
+            logits_path = torch.where(masks == 1, logits_path, -self.loginf)
             logsoftmax = torch.nn.LogSoftmax(dim=1)
             logprobs_path = logsoftmax(logits_path)
             log_q_path = torch.tensor(0.0)
@@ -639,7 +730,7 @@ class Buffer:
     def __init__(self, config):
         self.config = config
         self.path_data_oracle = self.config.path.data_oracle
-
+        self.test_path = self.config.gflownet.test.path
         self.rng = np.random.default_rng(47)  # to parametrize
 
     def np2df(self):
@@ -658,16 +749,27 @@ class Buffer:
         return df
 
     def make_train_test_set(self):
-        df = self.np2df()
-        indices = self.rng.permutation(len(df.index))
-        n_tt = int(0.1 * len(indices))
-        indices_tt = indices[:n_tt]
-        indices_tr = indices[n_tt:]
-        df.loc[indices_tt, "test"] = True
-        df.loc[indices_tr, "train"] = True
-
-        self.train = df.loc[df.train]
-        self.test = df.loc[df.test]
+        """
+        Function:
+        Creates
+            df: dataframe with columns [samples, energies, train, test]
+            train: datatframe with columns [samples, energies, train, test] where df['train'] = True and df['test'] = False
+            test: datatframe with columns [samples, energies, train, test] where df['train'] = False and df['test'] = True
+        """
+        if self.path_data_oracle is not None:
+            df = self.np2df()
+            indices = self.rng.permutation(len(df.index))
+            n_tt = int(0.1 * len(indices))
+            indices_tt = indices[:n_tt]
+            indices_tr = indices[n_tt:]
+            df.loc[indices_tt, "test"] = True
+            df.loc[indices_tr, "train"] = True
+            self.train = df.loc[df.train]
+            self.test = df.loc[df.test]
+        else:
+            raise FileNotFoundError
+        if self.config.gflownet.test.mode == True and self.test_path is not None:
+            self.test = pd.read_csv(self.test_path, index_col=0)
 
 
 """
@@ -682,33 +784,35 @@ class Activation(nn.Module):
             self.activation = F.relu
         elif activation_func == "gelu":
             self.activation = F.gelu
+        elif activation_func == "leaky_relu":
+            self.activation = F.leaky_relu
 
     def forward(self, input):
         return self.activation(input)
 
 
 class MLP(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, obs_dim, dict_size):
         super().__init__()
 
         self.config = config
-        act_func = "relu"
+        act_func = "leaky_relu"  # relu
 
         # Architecture
-        self.input_max_length = self.config.env.max_len + 1
-        self.input_classes = self.config.env.dict_size + 1
-        self.init_layer_size = int(self.input_max_length * self.input_classes)
-        self.final_layer_size = int(self.input_classes)
+        self.init_layer_size = obs_dim
+        self.final_layer_size = dict_size  # 3
 
-        self.filters = 256
-        self.layers = 16
+        self.filters = 128
+        self.layers = 1
 
         prob_dropout = self.config.gflownet.training.dropout
 
         # build input and output layers
         self.initial_layer = nn.Linear(self.init_layer_size, self.filters)
         self.initial_activation = Activation(act_func)
-        self.output_layer = nn.Linear(self.filters, self.final_layer_size, bias=False)
+        self.output_layer = nn.Linear(
+            self.filters, self.final_layer_size, bias=True
+        )  # bias=Flase
 
         # build hidden layers
         self.lin_layers = []
