@@ -19,10 +19,11 @@ class Logger:
     def __init__(self, config):
         self.config = config
         date_time = datetime.today().strftime("%d/%m-%H:%M:%S")
-        run_name = "proxy{}_oracle{}_gfn{}_minLen{}_maxLen{}_{}".format(
+        run_name = "proxy{}_oracle{}_gfn{}_acq{}_minLen{}_maxLen{}_{}".format(
             config.proxy.model.upper(),
             config.oracle.main.upper(),
             config.gflownet.policy_model.upper(),
+            config.acquisition.main.upper(),
             config.env.min_len,
             config.env.max_len,
             date_time,
@@ -50,7 +51,6 @@ class Logger:
         plt.xlabel(key)
         fig = wandb.Image(fig)
         wandb.log({key: fig})
-        # wandb.log({key: wandb.Histogram(value)})
 
     def finish(self):
         wandb.finish()

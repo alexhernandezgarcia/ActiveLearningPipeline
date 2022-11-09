@@ -59,6 +59,7 @@ class GFlowNet:
 
         self.loginf = tf_list([1e6])
         self.buffer = Buffer(self.config)
+        self.test_period = self.config.gflownet.test.period
 
     def load_hyperparameters(self):
         self.flowmatch_eps = tf_list([self.config.gflownet.loss.flowmatch_eps])
@@ -399,9 +400,12 @@ class GFlowNet:
         rewards = self.env.get_reward(input_reward, done)
         terminal_states = rewards[rewards != 0]
         # mean of just the terminal states
-        self.logger.log_metric("rewards", np.mean(terminal_states))
+        self.logger.log_metric("mean_reward", np.mean(terminal_states))
+        self.logger.log_metric("max_reward", np.max(terminal_states))
         proxy_vals = self.env.reward2acq(terminal_states)
-        self.logger.log_metric("proxy_vals", np.mean(proxy_vals))
+        self.logger.log_metric("mean_proxy_score", np.mean(proxy_vals))
+        self.logger.log_metric("min_proxy_score", np.min(proxy_vals))
+        self.logger.log_metric("max_proxy_score", np.max(proxy_vals))
         rewards = [tf_list([r]) for r in rewards]
         done = [tl_list([d]) for d in done]
 
@@ -522,6 +526,24 @@ class GFlowNet:
                 if sub_it == 0:
                     all_losses.append(loss.item())
 
+            if (it % self.test_period == 0) and self.buffer.test is not None:
+                data_logq = []
+                for statestr, score in tqdm(
+                    zip(self.buffer.test.samples.values, self.buffer.test["energies"]),
+                    disable=self.test_period < 10,
+                ):
+                    statestr = statestr.tolist()
+                    path_list, actions = self.env.get_paths(
+                        [[statestr]],
+                        [[self.env.token_eos]],
+                    )
+                    data_logq.append(
+                        self.logq(path_list, actions, self.model, self.env, self.device)
+                    )
+                corr = np.corrcoef(data_logq, self.buffer.test["energies"])
+                self.logger.log_metric("test_corr_logq_score", corr[0, 1])
+                self.logger.log_metric("test_mean_logq", np.mean(data_logq))
+
         # save model
         path = self.path_model
         torch.save(
@@ -561,10 +583,10 @@ class GFlowNet:
         return batch
 
     def manip2policy(self, state):
-        seq_manip = state
+        seq_manip = np.array(state)
         initial_len = len(seq_manip)
 
-        seq_tensor = torch.from_numpy(seq_manip)
+        seq_tensor = torch.Tensor(seq_manip)
         seq_ohe = F.one_hot(seq_tensor.long(), num_classes=self.env.n_alphabet + 1)
         input_policy = seq_ohe.reshape(1, -1).float()
 
@@ -576,6 +598,30 @@ class GFlowNet:
             input_policy = torch.cat((input_policy, padding), dim=1)
 
         return to(input_policy)[0]
+
+    def logq(self, path_list, actions_list, model, env, device):
+        log_q = torch.tensor(1.0)
+        for path, actions in zip(path_list, actions_list):
+            path = path[::-1]
+            actions = actions[::-1]
+            path_ohe = torch.stack(list(map(self.manip2policy, path)))
+            # following would be required for transformer and rnn if they are implemented
+            path_len = len(path)
+            mask = None
+            with torch.no_grad():
+                # TODO: potentially mask invalid actions next_q
+                logits_path = model(path_ohe)
+            logsoftmax = torch.nn.LogSoftmax(dim=1)
+            logprobs_path = logsoftmax(logits_path)
+            log_q_path = torch.tensor(0.0)
+            for s, a, logprobs in zip(*[path, actions, logprobs_path]):
+                log_q_path = log_q_path + logprobs[a]
+            # Accumulate log prob of path
+            if torch.le(log_q, 0.0):
+                log_q = torch.logaddexp(log_q, log_q_path)
+            else:
+                log_q = log_q_path
+        return log_q.item()
 
 
 """
