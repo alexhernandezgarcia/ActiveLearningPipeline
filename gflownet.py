@@ -538,7 +538,8 @@ class GFlowNet:
             torch.zeros(len(torch.unique(path_id, sorted=True)))
         ).index_add_(0, path_id_parents, logprobs)
         rewards = rewards[done.eq(1)][torch.argsort(path_id[done.eq(1)])]
-        loss = (self.Z.sum() + sumlogprobs - torch.log((rewards))).pow(2).mean()
+        loss = (self.Z.sum() + sumlogprobs - torch.log((rewards.clamp(min=1e-32)))).pow(2).mean()
+        print("loss gfn", loss.item())
         return loss
 
     def train(self):
@@ -691,7 +692,6 @@ class GFlowNet:
             actions = actions[::-1]
             path_ohe = torch.stack(list(map(self.manip2policy, path)))
             done = [0] * len(path)
-            # done[-1] = 1
             # following would be required for transformer and rnn if they are implemented
             path_len = len(path)
             masks = tf_list(

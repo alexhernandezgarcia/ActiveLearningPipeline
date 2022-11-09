@@ -427,17 +427,53 @@ class OracleGridCorners(OracleBase):
         # convert to list as all other oracles return a list
         return samples
 
+    # def base2oracle(self, state):
+    #     """
+    #     Input : array([2, 1])
+    #     Output : array([1., 0.])
+    #     """
+
+    #     obs = np.zeros(self.obs_dim, dtype=np.float32)
+    #     obs[(np.arange(len(state)) * self.length + state)] = 1
+    #     obs = obs.reshape((self.n_dim, self.length)) * self.cells[None, :]
+    #     obs = obs.sum(axis=1)
+    #     return obs
+
     def base2oracle(self, state):
         """
-        Input : array([2, 1])
-        Output : array([1., 0.])
+        Prepares a list of states in "GFlowNet format" for the oracles: a list of length
+        n_dim with values in the range [cell_min, cell_max] for each state.
+
+        Args
+        ----
+        state_list : list of lists
+            List of states.
         """
 
-        obs = np.zeros(self.obs_dim, dtype=np.float32)
-        obs[(np.arange(len(state)) * self.length + state)] = 1
-        obs = obs.reshape((self.n_dim, self.length)) * self.cells[None, :]
-        obs = obs.sum(axis=1)
-        return obs
+        def state2obs(state=None):
+            """
+            Transforms the state given as argument (or self.state if None) into a
+            one-hot encoding. The output is a list of len length * n_dim,
+            where each n-th successive block of length elements is a one-hot encoding of
+            the position in the n-th dimension.
+
+            Example:
+            - State, state: [0, 3, 1] (n_dim = 3)
+            - state2obs(state): [1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0] (length = 4)
+                              |     0    |      3    |      1    |
+             """
+            if state is None:
+                state = self.state.copy()
+            obs = np.zeros(self.obs_dim, dtype=np.float32)
+            obs[(np.arange(len(state)) * self.length + state)] = 1
+            return obs
+
+        return (
+                state2obs(state).reshape((self.n_dim, self.length))
+                * self.cells[None, :]
+            ).sum(axis=1)
+            # for state in state_list
+        # ]
 
     def get_score(self, queries):
         """
