@@ -25,7 +25,9 @@ Problems
 ==> we need to think about whether or not to shuffle test set between runs, or indeed what to use in the test set at all - right now we shuffle
 '''
 
-
+#TODO : ensemble methods not yet implemented
+#The following big class allows to chose a specific model for the proxy, but imposes the same optimizer and way of training for all of them.
+#For more modularity, in main-new-al, there is a BaseClass and a subclass for each proxy architecture.
 class modelNet():
     def __init__(self, config, ensembleIndex):
         self.config = config
@@ -55,7 +57,7 @@ class modelNet():
         self.mean, self.std = datasetBuilder.getStandardization()
         self.dataset_samples, self.dataset_scores = datasetBuilder.getFullDataset()
 
-
+    #This is indeed common to all proxies, so it is a callable method of the mother class ProxyBase
     def save(self, best):
         if best == 0:
             torch.save({'model_state_dict': self.model.state_dict(), 'optimizer_state_dict': self.optimizer.state_dict()}, 'ckpts/'+getModelName(self.ensembleIndex)+'_final')
@@ -221,7 +223,7 @@ class modelNet():
         #if self.converged == 1:
         #    printRecord(f'{bcolors.OKCYAN}Model training converged{bcolors.ENDC} after {bcolors.OKBLUE}%d{bcolors.ENDC}' %self.epochs + f" epochs and with a final test loss of {bcolors.OKGREEN}%.3f{bcolors.ENDC}" % np.amin(np.asarray(self.err_te_hist)))
 
-
+    #This does not allow for complex acquisition function, so we moved that in Acquisition.py 
     def evaluate(self, Data, output="Average"):
         '''
         evaluate the model
@@ -320,7 +322,7 @@ class modelNet():
         if self.config.device == 'cuda':
             self.model = self.model.cuda()
 
-
+#TODO : to be implemented
 class modelEnsemble(nn.Module): # just for evaluation of a pre-trained ensemble
     def __init__(self,models):
         super(modelEnsemble, self).__init__()

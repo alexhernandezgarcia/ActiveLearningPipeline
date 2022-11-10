@@ -15,7 +15,8 @@ To-Do:
 ==> implement gFlowNet sampler
 '''
 
-
+#The Querier in main-new-al is the most basic one, just sampling with the latest GFlownet and taking these raw candidates.
+#All the enhancements in these files are to be understood and implemented. Annealing / Filtering, etc ...
 class Querier():
     def __init__(self, config):
         self.config = config

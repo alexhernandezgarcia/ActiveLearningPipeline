@@ -20,8 +20,12 @@ class ActiveLearning():
     def __init__(self, config):
         self.pipeIter = None
         self.homedir = os.getcwd()
+        #an episode is a round of the whole Active Learning pipeline. So far we only perform the pipeline once when calling the code, so no episode.
+        #TODO : do we want to run multiple times the AL pipeline automatically ? or the future implementation of Hydra will solve that ?
         self.episode = 0
         self.config = config
+        #self.runNum serves to identify the run in the comet logger and in the working directory where some data is stored locally. To be incorporated in the logger ?
+        #TODO : find a systematic way to identify a run in the logger
         self.runNum = self.config.run_num
         self.oracle = Oracle(
             seed = self.config.seeds.dataset,
@@ -36,11 +40,15 @@ class ActiveLearning():
             nupack_target_motif = self.config.dataset.nupack_target_motif,
             seed_toy = self.config.seeds.toy_oracle,
         ) # oracle needs to be initialized to initialize toy datasets
+        #RL agent for benchmarking, not implemented for now
         self.agent = ParameterUpdateAgent(self.config)
         self.querier = Querier(self.config) # might as well initialize the querier here
+        #self.setup() method is to create a new folder to save the data for each run. Right now, when we run the pipeline, the data of the previous run is replaced by the new run.
+        #TODO : implement a setup to keep track of the saved data of every run. Maybe to do only once the pipeline is sure to work, ie when the data of all the runs is relevant to save.
         self.setup()
         self.getModelSize()
         # Comet
+        #we moved the logger initiation below in a class Logger. Maybe just incorporate run_num to identify the run.
         if config.al.comet.project:
             self.comet = Experiment(
                 project_name=config.al.comet.project, display_summary_level=0,
@@ -59,6 +67,7 @@ class ActiveLearning():
         else:
             self.comet = None
         # Save YAML config
+        #TODO : once the pipeline is sure to work, in each folder when the data is stored, save the config that led to these results. Or with Hydra.
         with open(self.workDir + '/config.yml', 'w') as f:
             yaml.dump(numpy2python(namespace2dict(self.config)), f, default_flow_style=False)
 
@@ -137,13 +146,16 @@ class ActiveLearning():
         for _ in range(self.config.al.episodes):
 
             if self.config.dataset.type == 'toy':
+                #Not Implemented Yet. For future benchmarking for Multi-Fidelity, could be useful, once we agree on a toy oracle.
                 self.sampleOracle() # use the oracle to pre-solve the problem for future benchmarking
-
+            #The statistics below are to be initialized in the Logger class now.
             self.testMinima = [] # best test loss of models, for each iteration of the pipeline
             self.bestScores = [] # best optima found by the sampler, for each iteration of the pipeline
 
             for self.pipeIter in range(self.config.al.n_iter):
+                #TODO : incorporate some friendly prints to make the command line more interactive ;)
                 printRecord(f'Starting pipeline iteration #{bcolors.FAIL}%d{bcolors.ENDC}' % int(self.pipeIter+1))
+                #We don't distinguish terminal or not. The last iteration of the pipeline involves retraining the GFlowNet and sampling from it one last time, like the other iterations.
                 if self.pipeIter == (self.config.al.n_iter - 1):
                     self.terminal = 1
                 else:
@@ -170,10 +182,13 @@ class ActiveLearning():
         '''
 
         t0 = time.time()
+        #We created the Proxy component before and simply call Proxy.train for clarity
         self.retrainModels()
         printRecord('Retraining took {} seconds'.format(int(time.time()-t0)))
 
+        #TODO : implement some time statistics ? 
         t0 = time.time()
+        #self.getModelState() and self.getDatasetReward() are statistics methods. To be put in Logger ?
         self.getModelState(self.terminal) # run energy-only sampling and create model state dict
         self.getDatasetReward()
         printRecord('Model state calculation took {} seconds'.format(int(time.time()-t0)))
@@ -216,6 +231,7 @@ class ActiveLearning():
 
         # run the sampler
         self.loadEstimatorEnsemble()
+        #To evaluate the current GFlownet, another sampling is performed. Maybe it is easier to use the last samples sent to the oracle to evaluate the GFLowNet instead of sampling once again from it independently.
         if terminal: # use the query-generating sampler for terminal iteration
             sampleDict = self.querier.runSampling(self.model, scoreFunction = [1, 0], al_iter = self.pipeIter) # sample existing optima using standard sampler
         else: # use a cheap sampler for mid-run model state calculations
@@ -224,12 +240,14 @@ class ActiveLearning():
         sampleDict = filterOutputs(sampleDict)
 
         # we used to do clustering here, now strictly argsort direct from the sampler
+        #TODO : Useful statistics about the energies of the candidates given by the GFlowNet
         sort_inds = np.argsort(sampleDict['energies']) # sort by energy
         samples = sampleDict['samples'][sort_inds][:self.config.querier.model_state_size] # top-k samples from model state run
         energies = sampleDict['energies'][sort_inds][:self.config.querier.model_state_size]
         uncertainties = sampleDict['uncertainties'][sort_inds][:self.config.querier.model_state_size]
 
         # get distances to relevant datasets
+        #TODO : Useful statistics about the diversity of the candidates given by the GFlowNet
         internalDist, datasetDist, randomDist = self.getDataDists(samples)
         self.getModelStateReward(energies, uncertainties)
 
@@ -260,7 +278,7 @@ class ActiveLearning():
                     'dataset distance is ' + bcolors.WARNING + '{:.2f} '.format(np.average(datasetDist)) + bcolors.ENDC +
                     'and overall distance estimated at ' + bcolors.WARNING + '{:.2f}'.format(np.average(randomDist)) + bcolors.ENDC)
 
-
+        #Not implemented so far and not well understood
         if self.config.al.large_model_evaluation: # we can quickly check the test error against a huge random dataset
             self.largeModelEvaluation()
             if self.comet:
@@ -401,7 +419,7 @@ class ActiveLearning():
 
         self.testMinima.append(testMins)
 
-
+    #Ensemble methods not yet implemented (just a single proxy model). If so, to be rather incorporated in Proxy.py for clarity.
     def loadEstimatorEnsemble(self):
         '''
         load all the trained models at their best checkpoints
@@ -427,6 +445,7 @@ class ActiveLearning():
         load a new instance of the model with reset parameters
         :return:
         '''
+        #Put in Proxy.py, to isolate all the methods related to a model.
         try: # if we have a model already, delete it
             del self.model
         except:
@@ -438,6 +457,7 @@ class ActiveLearning():
 
 
     def getModelSize(self):
+        #Not implemented (utility ?)
         self.model = modelNet(self.config, 0)
         nParams = get_n_params(self.model.model)
         printRecord('Proxy model has {} parameters'.format(int(nParams)))
@@ -480,7 +500,7 @@ class ActiveLearning():
 
         printRecord("Model has overall loss of" + bcolors.OKCYAN + ' {:.5f}, '.format(totalLoss) + bcolors.ENDC + 'best 10% loss of' + bcolors.OKCYAN + ' {:.5f} '.format(bottomTenLoss) + bcolors.ENDC +  'on {} toy dataset samples'.format(numSamples))
 
-
+    #TODO : implement the option to simply call the best version of the GFlowNet stored so far to sample the best candidates  ? For direct Evaluation purposes once the pipeline is already working.
     def runPureSampler(self):
         ti = time.time()
         self.model = None
@@ -774,7 +794,7 @@ class ActiveLearning():
 
         return minClusterSamples, minClusterEns, minClusterVars
 
-
+    #Good statistics, but to be rather isolated in a Logger or other class for clarity
     def getDataDists(self, samples):
         '''
         compute average binary distances between a set of samples and
@@ -799,7 +819,7 @@ class ActiveLearning():
 
         return internalDist, datasetDist, randomDist
 
-
+#implemented in Proxy.py rather
 def trainModel(config, i):
     '''
     rewritten for training in a parallelized fashion
