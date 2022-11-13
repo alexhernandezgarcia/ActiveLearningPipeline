@@ -13,3 +13,4 @@ sh/
 !requirements.txt
 !read_me.txt
 *.out
+wandb/
