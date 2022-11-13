@@ -179,7 +179,7 @@ class GFlowNetBase:
 
             self.best_lr_scheduler = make_lr_scheduler(self.best_opt, self.config)  
             self.manip2policy = self.model.manip2policy
-
+    #Good news : the forward_sample method is exactly the same than in single_fidelity! All the differences with the state definitions and updates, ... are in env.py !
     @abstractmethod
     def forward_sample(self, envs, policy, temperature = 0):
         """
@@ -295,7 +295,12 @@ class GFlowNetBase:
             action_idx = self.rng.integers(low=0, high=len(parents_a))
         else:
             raise NotImplemented
-
+        #backward_sample() can be the same as in single_fidelity just like forward_sample() ! 
+        #Only the following differs but can be easily fixed to match single_fidelity
+        #TODO : to be discussed, but we should define env.state = (seq, fid) (instead of env.seq and env.fid separately)
+        #As a reminder in single_fidelity main-new-al, we had : 
+        # env.state = parents[action_idx]  # state ou fonction set state
+        # env.last_action = parents_a[action_idx]
         state = parents[action_idx]
         env.seq = state[0] #state ou fonction set state
         env.fid = state[1]
@@ -324,7 +329,7 @@ class GFlowNetBase:
     def trajectory_balance(self, data):
         pass
     
-
+    #The training procedure is the same as for single_fidelity !
     @abstractmethod
     def train(self):
         all_losses = []
@@ -358,7 +363,7 @@ class GFlowNetBase:
         torch.save({'model_state_dict': self.model.state_dict(), 'optimizer_state_dict': self.opt.state_dict()}, path)
         print("new gfn model saved ! ")
         return
-    
+    #Final sampling strategy does not change from single_fidelity !
     @abstractmethod
     def sample_queries(self, nb_queries):
         '''
@@ -433,17 +438,29 @@ class GFlowNet_A(GFlowNetBase):
         for env in envs[:offline_samples]:
             state = self.rng.permutation(self.buffer.train.samples.values)[0]
             state_manip = self.env.base2manip(state)
+            #In the single_fidelity code, we had : 
+            # env.done = True
+            # env.state = state_manip
+            # env.last_action = self.env.token_eos
+            #TODO : discuss defining self.state (cf remark in backward_sample) and removing self.eos ? (that does NOT exist in single_fidelity)
             env.done = True
             env.eos = False
             env.seq = state_manip[0]
             env.fid = state_manip[1]
+
+            #TODO : env.n_actions_taken vs env.last_action : what is really useful ?
             env.n_actions_taken = len(env.seq) + 1 #all aptamers + eos + fidelity action
             #env.last_action = env.fid
             #we don't use last_action_taken
 
 
             while len(env.seq) > 0 or (env.fid != None):
+                #In single_fidelity code :
+                # previous_state = env.state
+                # previous_done = env.done
+                # previous_mask = env.get_mask()
                 previous_state = env.get_state()
+                #TODO : we don't really need previous_eos, this information is useful for full_MVP_mf but not here
                 previous_eos = env.eos
                 previous_done = env.done
                 previous_mask = env.get_mask()
@@ -589,8 +606,10 @@ class GFlowNet_A(GFlowNetBase):
         )
 
         return batch
+    #CONCLUSION : get_training_data can easily be the same as in single_fidelity
+    #TODO : provided we think about self.state instead of self.seq/self.fid // and about self.eos
 
-
+    #Again, flowmatch is exactly the same, since fidelity is an action like the others ! 
     def flowmatch_loss(self, data):
         super().flowmatch_loss(data)
         self.model.train()
@@ -660,7 +679,7 @@ class GFlowNet_A(GFlowNetBase):
 '''
 Utils Buffer
 '''
-
+#The Buffer is the same than in single_fidelity, the only difference being that we load states = (seq, fid) in base format instead of just state = seq
 class Buffer:
     '''
     BUffer of data : 
@@ -721,7 +740,9 @@ class Activation(nn.Module):
     def forward(self, input):
         return self.activation(input)
 
-
+#TODO : That is the real change in the GFlownet : the Policy Network !!!
+#The way you get your training data, you train your gflownet and then sample from it is THE SAME as single_fidelity
+#The policy network must integrate fidelity actions
 class MLP(nn.Module):
     def __init__(self, config):
         super(MLP, self).__init__()

@@ -17,9 +17,14 @@ env:
   max_len : 15
   min_word_len : 1
   max_word_len : 1
+  #TODO : add parameters to define the number of fidelities (and maybe conventions 0 : first best fidelity,..., total_best_fidelities - 1: worst fidelity, ...)
   total_fidelities : 3
 
 oracle:
+  # The oracle will be different. We have to think how each oracle will handle multi-fidelity 
+  # --> hard-coded (transformers vs mlp, ...) : that would be okay for a fix number of fidelities (3 : mlp, lstm, transformer trained oracles)
+  # --> parametrized (nupack with a noise parameter for instance) : that would allow for any number of different fidelity oracles, but then the noises would be defined in the OracleClass
+  # The costs for each sub_oracle (each fidelity) can be modified either in the config file (for tests purposes), either in the oracle itself (that will be the case for the final oracles we will use)
   main : "toy"
   init_dataset:
     seed : 0
@@ -38,6 +43,8 @@ proxy:
     seed : 10
 
 gflownet:
+  #TODO : just an idea for now, but in the best scenario to compare chosing the fidelity at the end or at the middle, we can a parameter
+  #fidelity_choice : "middle" or "end"
   policy_model : "mlp"
   loss : 
     function: "flowmatch"
@@ -63,6 +70,7 @@ gflownet:
     ttsr : 3
 
 acquisition:
+  #MES, ... + related parameters to add
   main: "proxy"
   
 

@@ -37,7 +37,7 @@ class Oracle:
             self.oracle = OracleNupack(self.config)
         else:
             raise NotImplementedError
-        
+        #Useless function since we have acq2reward now, much cleaner
         self.oracle2proxy = self.oracle.oracle2proxy #this will be passed to the proxy 
 
     def initialize_dataset(self, save = True, return_data = False):
@@ -100,8 +100,10 @@ class OracleBase:
     def oracle2proxy(self, oracle_value):
         pass
 
-
-
+#In what follow : oracle refers to a type of oracle (Nupack, Corners, ...). For each oracle-type, there are many sub_oracles, one for each fidelity.
+#TODO : each subclass of OracleBase will incorporate several sub_oracles in itself, one for each fidelity.
+#Example : For the Nupack oracle, there woud be Nupack_0 without noise, Nupack_1 with more noise, ... all of that in the same class OracleNupack
+#TODO : we have to define the different costs associated with each fidelity querying
 class OracleMLP(OracleBase):
     def __init__(self, config):
         super().__init__(config)
@@ -112,6 +114,7 @@ class OracleMLP(OracleBase):
         self.device = torch.device(self.config.device)
         self.total_fidelities = self.config.env.total_fidelities
     
+    #TODO : we initialize the samples differently, (seq, fidelity). So far the fidelity is random between 0 and max_fidelity - 1
     def initialize_samples_base(self):
         self.min_len = self.config.env.min_len
         self.max_len = self.config.env.max_len
@@ -134,6 +137,9 @@ class OracleMLP(OracleBase):
 
         return full_samples
 
+    #TODO : as the base_format now includes fidelity, base2oracle will change depending on how we model the different fidelities for the oracle.
+    #Example : if we have different independant models for each fidelity, base2oracle would be : (base_seq, fidelity) --> (seq_for_model_fidelity, fidelity)
+    #We would then pass seq_for_model_fidelity to the relevant model according to the fidelity (transformer, mlp, ...). Note: seq_for_model_fidelity would be fidelity specific
     def base2oracle(self, state):
         seq_array, fidelity = state[0], state[1]
         initial_len = len(seq_array)
@@ -156,6 +162,8 @@ class OracleMLP(OracleBase):
         
         return (oracle_input.to(self.device)[0], fidelity)
 
+    #TODO : we would call the different suboracles for each fidelity
+    #That would not change the outputs, we still want energies in the end.
     def get_score(self, queries):
         '''
         Input : list of arrays=seqs

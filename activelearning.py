@@ -20,12 +20,14 @@ class ActiveLearning:
         #setup function that creates the directories to save data, ...
         self.setup()
         #util class to handle the statistics during training
+        #right now the Logger is defined in utils/, for more clarity
         self.logger = Logger()
 
         #load the main components of the AL pipeline
         self.oracle = Oracle(self.config)
         self.proxy = Proxy(self.config, self.oracle, self.logger) 
         self.acq = AcquisitionFunction(self.config, self.proxy)
+        # self.env, self.gflownet, self.querier are all put in gflownet agent for more modularity
         self.env = Env(self.config, self.acq)
         self.gflownet = GFlowNet(self.config, self.logger, self.env)
         self.querier = Querier(self.config, self.gflownet)
@@ -44,6 +46,7 @@ class ActiveLearning:
     
     def iterate(self):
         self.proxy.train()
+        # The following steps are incorporated in gflownet_agent
         self.gflownet.train()
         queries = self.querier.build_query()
         energies = self.oracle.score(queries)

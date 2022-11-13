@@ -266,6 +266,7 @@ class ProxyMLP(ProxyBase):
     def evaluate(self, data):
         return super().evaluate(data)
   
+    # That was changed to preprocess function, specific to each proxy model, which is better !
     def base2proxy(self, state):
 
         #useful format
@@ -329,7 +330,7 @@ class BuildDataset:
         #Targets of training
         targets = list(map(self.oracle2proxy, dataset["energies"]))
         self.targets = np.array(targets)
-
+        #we added normalizing the targets, which is an enhancement
 
         #Samples of training
         samples = list(map(self.proxy.base2proxy, dataset["samples"]))
@@ -403,7 +404,8 @@ class Activation(nn.Module):
     def forward(self, input):
         return self.activation(input)
 
-
+#TODO : the Proxy models will of course change because the input will contain the fidelity.
+#The minimum change would concern the models themselves and not the training and convergence methods.
 class MLP(nn.Module):
     def __init__(self, config):
         super(MLP, self).__init__()
@@ -491,6 +493,9 @@ class MLP(nn.Module):
         self.dropouts_after_fid = nn.ModuleList(self.dropouts_after_fid)
 
     def forward(self, x):
+        #TODO : the proxy models and the related preprocessing will change
+        #Ex : if we one-hot-encode, we might want to extract the fidelity part in this new representation, so as to pass it at a different point in the model.
+        #Then the preprocessing function could one-hot-encode and separate that for us, or that could simply done after in the forward function, as below : 
         x_seq = x[..., : -self.total_fidelities]
         x_fid = x[..., self.init_layer_depth :]  # +1 non convention python
 

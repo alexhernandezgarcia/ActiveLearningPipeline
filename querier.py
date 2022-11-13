@@ -2,6 +2,8 @@ class Querier:
     '''
     Samples with the GFlownet latest model and then do post post processing to enhance the candidates and get statistics on them
     '''
+    # The basic querier just samples candidate = (seq, fid) with the trained gflownet, no change compared to single_fidelity !
+    # But as we'll add duplicates filtering, ... all these enhancements will differ a bit from previous_code with the fidelity (We'll see as we code them)
     def __init__(self, config, gflownet):
         self.config = config
         self.gflownet = gflownet

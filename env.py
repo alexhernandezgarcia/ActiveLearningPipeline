@@ -79,15 +79,23 @@ class EnvAptamers(EnvBase):
         self.n_alphabet = self.config.env.dict_size
 
         #Fidelities
+        #TODO : as the fidelity is an action that the updates the env.state, it is a crucial parameter
         self.total_fidelities = self.config.env.total_fidelities
 
         #Using the conventions to number the actions
+        #TODO : we have to discuss how we represent the fidelities in the space of actions.
+        #So far, I modified the method get_action_space() so that it gives a dictionnary that distinguishes the dna action / eos action / fidelitiy action
         self.action_space = self.get_action_space() #dictionnary with keys : "dna_action", "eos_action", "fidelity_action"
+        #The following initializations are just utilities for sanity checks.
         self.last_dna_action = self.action_space['dna_action'][-1][0] #from 0 to last_dna_action : DNA Actions
         self.eos_token = self.action_space['eos_action'][0][0] #End of sequence action = Last DNA action_id + 1
         self.first_fidelity_action = self.action_space['fidelity_action'][0][0] #First fidelity action = Eos action + 1
 
         #Utils to convert the fidelities to actions (0, the worst fidelity corresponds to 0 + self.first_fidelity_action in terms of action number)
+        #TODO : we must distinguish : 
+        #1. The number of the fidelity action : here the first fidelity (0) is action number token_eos + 1 = token_last_dna_action + 2
+        #2. The actual fidelity number and how it updates the state.
+        #For example, if the policy network gives the action number token_eos + 1 = token_last_dna_action + 2, it would update the fidelity state from None to 0 (conventions we can discuss)
         self.fid_action2state = lambda x : x - self.first_fidelity_action
         self.fid_state2action = lambda x : x + self.first_fidelity_action
 
@@ -102,16 +110,25 @@ class EnvAptamers(EnvBase):
     def init_env(self, idx=0):
         super().init_env(idx)
         self.seq = np.array([])
+        #TODO : adding self.fid, complementary to self.seq to constitute the self.state
         self.fid = None
         self.n_actions_taken = 0
+        #TODO : in addition to self.done, we have to add self.eos.
+        #Important : self.eos is True if and only if (the eos action has just been chosen AND the fidelity is still None)
+        #self.done and self.eos can never be true at the same time. They are False at first, and then when eos action is chosen, self.eos = True if self.fid = None and self.done = True directly otherwise
+        #Remark : self.eos is not indispensable in itself (just like self.done isn't because both can be hard coded, we know when something is done or eos based on their seq / fid in manip format)
+        #But self.eos is a useful state so as to know what was the previous action and what is possible. 
+        #Besides, it is quite important if we want to integrate full_MVP_mf in the same code.
         self.done = False
         self.eos = False
         self.id = idx
         self.last_action = None
-    
+    #Defining self.state would have been tedious, it is easier to update separately self.seq and self.fid
+    #In gflownet.py, we access the whole state of en env with the self.get_state() method
     def get_state(self):
         return (self.seq, self.fid)
-    
+
+    #TODO : this method now outputs a dictionnary of actions, to better understand the structure of their representation 
     def get_action_space(self):
         '''
         Makes the link between the number of the action (ie integer index in the list dico_actions["all_action"]) and the actual action [A] or [Eos]
@@ -150,6 +167,7 @@ class EnvAptamers(EnvBase):
         #EXTREME CASES : done or eos
         if self.done:
             return [0 for _ in mask]
+        #One of the interests of introducing self.eos : if self.eos = True, we know that we just chose the eos action and we have to chose a fidelity before prompting self.done = True at next action
         elif self.eos:
             assert self.fid == None and self.done == False
             mask[:self.first_fidelity_action] = [0 for _ in range(self.first_fidelity_action)]
@@ -169,14 +187,19 @@ class EnvAptamers(EnvBase):
                 #eos forbidden
                 mask[self.eos_token] = 0
                 return mask
-            if len_seq == self.max_seq_len:
+            if len_seq >= self.max_seq_len:
+                #TODO : checking len_seq >= self.max_seq_len is okay if we chose on [A, C, T, G] action at a time, which is the case right now.
+                # When we'll allow [AA, AT, AG, ...] action to be sampled, this will not work anymore
                 #the only possible action is the EOS or the choice of the fidelity
                 mask[:self.eos_token] = [0 for _ in range(self.eos_token)] #fidelity already forbidden if fid chosen
                 return mask
             
             return mask
 
-    
+    #TODO : this would have to be modified cf main-new-al, but the rules are intuitive for multifidelity as well
+    #Please note that we are not in the autoregressive case anymore ! That is interesting in terms of flows
+    #Please also note that there is not backward = False option in the arguments.
+    #Indeed, we can only update env.done and env.eos AFTER chosing which parents we chose (several parents are possible !)
     def get_parents(self):
         parents = []
         parents_a = []
@@ -187,8 +210,6 @@ class EnvAptamers(EnvBase):
             parents_a += [self.fid_state2action(self.fid)]
             parents += [(self.seq, None)]
             #Choice eos
-            if self.seq[-1] != self.eos_token:
-                print(self.seq, self.fid, self.eos)
             assert self.seq[-1] == self.eos_token
             parents_a += [self.eos_token]
             parents += [(self.seq[:-1], self.fid)]
@@ -215,11 +236,12 @@ class EnvAptamers(EnvBase):
                 parents += [(self.seq, None)]
             
             return parents, parents_a
-
+    #This replaces the previous backward = True option in get_parents.
+    #update_status() is only called in gflownet.py for backward_sample() (to get offline data) : we update the state details after chosing it with a backward policy
     def update_status(self):
         seq = self.seq
         fid = self.fid
-
+        #As previously mentioned, self.done and self.eos can be hardcoded. Defining self.eos and self.done is just to avoid adding an "if" verification each time we want to know more about the state
         if len(seq) == 0:
             self.done = False
             self.eos = False
@@ -246,7 +268,7 @@ class EnvAptamers(EnvBase):
 
         if self.done:
             raise TypeError("can't perform action when env.done")
-        
+        #If you are self.eos = True, you can ony chose the fidelity next to complete your candidate definition
         elif self.eos:
             assert fid == None
             if action >= self.first_fidelity_action:
@@ -265,11 +287,13 @@ class EnvAptamers(EnvBase):
         else:
             #EOS
             if action == self.eos_token:
+                #You cannot chose eos action if your seq is to small (we force the choice or eos anyway when the max len is reached)
                 assert self.min_seq_len < self.max_seq_len
                 assert seq_len >= self.min_seq_len and seq_len <= self.max_seq_len
                 valid = True
                 self.fid = fid
                 self.seq = np.append(seq, self.action_space["eos_action"])
+                #Updating self.done and self.eos. Note that this can also be done by calling self.update_status() but we hard coded it here again ...
                 if fid != None:
                     self.eos = False
                     self.done = True
@@ -282,6 +306,7 @@ class EnvAptamers(EnvBase):
 
             #FID
             elif action >= self.first_fidelity_action:
+                #All these assertion are sanity checks that our rules have been enforced
                 assert fid == None and self.done == False
                 valid = True
                 self.fid = self.fid_action2state(action)
@@ -330,7 +355,7 @@ class EnvAptamers(EnvBase):
         done = np.array(done)    
         rewards[done] = final_rewards
         return rewards
-          
+    #TODO : based on what we discussed, we might need to gather all transitions that are environment specific in the environment ...    
     def base2manip(self, state):
         seq_base = state[0]
         fid = state[1]

@@ -89,6 +89,7 @@ class AcquisitionFunctionProxy(AcquisitionFunctionBase):
 
         return outputs #no need to .view, it is already the good shape
 
+    # base2af is not necessary most of the case becase we call the proxy which includes the relevant transformation in preprocess now
     def base2af(self, state):
         #useful format
         self.dict_size = self.config.env.dict_size
@@ -128,7 +129,7 @@ class AcquisitionFunctionProxy(AcquisitionFunctionBase):
         return input_af.to(self.device)[0]
     
 
-
+#TODO : for more complex acquisition functions (MES), integrating our conventions with libraries like Botorch is a challenge.
 class AcquisitionFunctionMES(AcquisitionFunctionBase):
     def __init__(self, config, proxy):
         super().__init__(config, proxy)
@@ -139,6 +140,7 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
     def make_botorch_model(self):
         return ProxyBotorch(self.config, self.proxy)
     
+    # TODO : some functions will be specific to complex AF, here we have to load and construct the candidates set for Botorch
     def make_candidate_set(self):
         #load the npy file with current evaluated candidates
         loading_path = self.config.path.data_oracle
@@ -157,7 +159,12 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
         #object with customed weights of model
         return None
 
-
+    #Not only they will be oracle specific methods, which is fine
+    #But for integration, with the proxy and its format, we must do case by case: 
+    #So far, inputing "base format" to the proxy and using preprocessing on it is not compatible with Botorch
+    #Project_max_fidelity takes a tensor and so far the base_format is a tuple (seq, fidelity).
+    #That is why base2af was useful here... 
+    # TODO : challenges to discuss for the integration of proxy and its format with the imported AF modules
     def project_max_fidelity(self, tensor_af):
         #tensor in af format and then put them to max fidelity for the proxy
         #useful format
@@ -246,7 +253,7 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
 '''
 ZOO
 '''
-
+#TODO : might need to add define extra wrappers to fit with Botorch requirements. Case by case.
 class ProxyBotorch(Model):
     def __init__(self, config, proxy):
         self.config = config
