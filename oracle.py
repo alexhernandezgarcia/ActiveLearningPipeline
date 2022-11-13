@@ -103,6 +103,7 @@ class OracleBase:
 #In what follow : oracle refers to a type of oracle (Nupack, Corners, ...). For each oracle-type, there are many sub_oracles, one for each fidelity.
 #TODO : each subclass of OracleBase will incorporate several sub_oracles in itself, one for each fidelity.
 #Example : For the Nupack oracle, there woud be Nupack_0 without noise, Nupack_1 with more noise, ... all of that in the same class OracleNupack
+#TODO : we have to define the different costs associated with each fidelity querying
 class OracleMLP(OracleBase):
     def __init__(self, config):
         super().__init__(config)
