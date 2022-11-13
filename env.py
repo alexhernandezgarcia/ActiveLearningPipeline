@@ -123,7 +123,8 @@ class EnvAptamers(EnvBase):
         self.eos = False
         self.id = idx
         self.last_action = None
-    
+    #Defining self.state would have been tedious, it is easier to update separately self.seq and self.fid
+    #In gflownet.py, we access the whole state of en env with the self.get_state() method
     def get_state(self):
         return (self.seq, self.fid)
 
