@@ -15,7 +15,9 @@ from botorch.posteriors.gpytorch import GPyTorchPosterior
 '''
 ACQUISITION WRAPPER
 '''
-
+# Exactly the same as in middle-mf.
+# Just adding specific class for MF Acquisition FUnction such as MES
+# Be careful with calling the proxy and format conventions of Botorch for MES
 class AcquisitionFunction:
     def __init__(self, config, proxy):
         self.config = config
@@ -94,7 +96,7 @@ class AcquisitionFunctionProxy(AcquisitionFunctionBase):
         with torch.no_grad():
             outputs = self.proxy.model(inputs)
         return outputs
-
+    #TODO : we take an env.state with env.eos == True, and we compute the logits to chose the fidelity according to the ground truth logits : ie acquisition function values / rewards ??
     def get_logits_fidelity(self, inputs_eos_base):
         inputs_all_fidelities = [(input[0], fid) for input in inputs_eos_base for fid in range(self.total_fidelities)]
         # inputs_af = list(map(self.base2af, inputs_all_fidelities))
@@ -103,7 +105,7 @@ class AcquisitionFunctionProxy(AcquisitionFunctionBase):
         outputs = self.get_reward_batch(inputs_all_fidelities)
 
         return outputs.view(len(inputs_eos_base), self.total_fidelities)
-
+    #TODO : this is the actual pseudo_reward, compute at env.eos == True and equal to the sum of the rewards for finished sequence with all possible fidelities
     def get_sum_reward_batch(self, inputs_af_base):
         inputs_indices = torch.LongTensor(
             sum([[i] * self.total_fidelities for i in range(len(inputs_af_base))], [])

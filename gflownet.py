@@ -177,7 +177,7 @@ class GFlowNetBase:
 
             self.best_lr_scheduler = make_lr_scheduler(self.best_opt, self.config)  
 
-
+    # Exactly the same as in single_fidelity, because called in the same context
     @abstractmethod
     def forward_sample(self, envs, policy, temperature = 0):
         """
@@ -209,7 +209,7 @@ class GFlowNetBase:
             self.sampling_model = self.best_model
         
         self.sampling_model.eval()
-
+        #instead of calling env.get_state(), we might define directly env.state = (seq, fid) to match env.state called in single fidelity
         states = [env.get_state() for env in envs]
         states_ohe = torch.stack(list(map(self.manip2policy, states))).view(len(states), -1)
         masks = tf_list([env.get_mask() for env in envs])
@@ -264,7 +264,7 @@ class GFlowNetBase:
         
         return envs, actions, valids
 
-
+    #There would be a small difference with single_fidelity, with the specific annoying case of imposing the flows instead of calling model when env.done == True
     @abstractmethod
     def backward_sample(self, env, policy, temperature = 0):
         if temperature == 0:
@@ -277,6 +277,7 @@ class GFlowNetBase:
         if policy == "model":
             self.best_model.eval()
             with torch.no_grad():
+                #TODO : maybe call the imposed logits here if env.done == True ... for the fidelity choice
                 action_logits = self.best_model(parents_ohe)[
                     torch.arange(len(parents)), parents_a
                 ]
@@ -293,6 +294,7 @@ class GFlowNetBase:
             raise NotImplemented
 
         state = parents[action_idx]
+        #That would change with env.state = (seq, fid) to match single fidelity exactly
         env.seq = state[0] #state ou fonction set state
         env.fid = state[1]
         env.last_action = parents_a[action_idx]
@@ -318,7 +320,7 @@ class GFlowNetBase:
     def trajectory_balance(self, data):
         pass
     
-
+    # Train function never changes !
     @abstractmethod
     def train(self):
         all_losses = []
@@ -712,7 +714,7 @@ class GFlowNet_A(GFlowNetBase):
     def train(self):
         super().train()
 
-    
+    #Classic sampling until eos. And then calling forward_sample_eos to chose the fidelity artificially.
     def sample_queries(self, nb_queries):
         print("we sample for query !")
         self.make_model(best_model=True)

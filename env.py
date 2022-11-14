@@ -124,17 +124,19 @@ class EnvAptamers(EnvBase):
     
     def init_env(self, idx=0):
         super().init_env(idx)
+        #Same comments than in middle_mf : self.seq, self.fid, to be merged in self.state for compatibility with single fidelity
         self.seq = np.array([])
         self.fid = None
         self.n_actions_taken = 0
         self.done = False
+        #TODO : here, as we impose the flows, self.eos is crucial because that is the pseudo final_state on which we compute the reward.
         self.eos = False
         self.id = idx
         self.last_action = None
     
     def get_state(self):
         return (self.seq, self.fid)
-
+    # Contrary to middle-mf, the possible actions are the same as in single fidelity, because we artificially chose the fidelity at the end by imposing the flows
     def get_action_space(self):
         super().get_action_space()
         valid_wordlens = np.arange(self.min_word_len, self.max_word_len +1)
@@ -147,7 +149,7 @@ class EnvAptamers(EnvBase):
 
     def get_token_eos(self, action_space):
         return len(action_space)
-    
+    # Same as in SF
     def get_mask(self):
         super().get_mask()
 
@@ -171,10 +173,10 @@ class EnvAptamers(EnvBase):
         
         else:
             return mask
-    
+    # different from middle_mf and single fidelity
     def get_parents(self, backward = False):
         super().get_parents(backward)
-
+        #if self.done, we know the last action taken was the fidelity
         if self.done:
             if (self.eos == False) and (self.fid is not None) and (self.seq[-1] == self.token_eos):
                 parents_a = [self.fid]
@@ -187,7 +189,7 @@ class EnvAptamers(EnvBase):
 
             else:
                 raise TypeError("Not good ending of sequence")
-
+        #if self.eos, we know the last action taken was eos
         elif self.eos:
             if (self.seq[-1] == self.token_eos) and self.done == False and (self.fid is None):
                 parents_a = [self.token_eos]
@@ -207,7 +209,7 @@ class EnvAptamers(EnvBase):
                     actions.append(idx)
             
             return parents, actions
-    
+    # Like get_parents, step() is nearly the same as in single fidelity, but we add the update of the fidelity at the end
     def step(self, action):
         super().step(action)
         valid = False
@@ -215,6 +217,7 @@ class EnvAptamers(EnvBase):
         seq_len = len(seq)
 
         if self.eos:
+            #if self.eos, we perform a sanity check: the action must be a fidelity choice
             if not(self.done) and (action[0] in range(self.total_fidelities)):
                 if seq_len - 1 >= self.min_seq_len and seq_len - 1 <= self.max_seq_len: #-1 for the eos action
         
@@ -273,7 +276,11 @@ class EnvAptamers(EnvBase):
         customed_af = lambda x: x #to favor the higher rewards in a more spiky way, can be customed
         exponentiate = np.vectorize(customed_af)
         return exponentiate(true_reward)
-
+    # The reward is distored : 
+    # 1. It is computed for states at self.eos and not self.done
+    # 2. It is equal to the sum of the rewards a(x,m) for all fidelities m available
+    # 3. This is done after conversion to the right format with a specific method added in acquisition function
+    # NB : this is only used to compute the rewards, which are backpropagated : imposing flows.
     def get_reward(self, states, eos):
         rewards = np.zeros(len(eos), dtype = float)
         final_states = [s for s, e in zip(states, eos) if e]
@@ -289,10 +296,12 @@ class EnvAptamers(EnvBase):
         rewards[eos] = final_rewards
 
         return rewards
-    
+    # Specific function to chose the fidelity at the end according to the imposed flows
+    # It calls a method in acquisistion function as well, like get_rewards
     def get_logits_fidelity(self, states):
         inputs_base = [self.manip2base(state_eos) for state_eos in states]
         logits = self.acq.get_logits_fidelity(inputs_base)
+        #TODO : maybe acq2rewards should be called here.
         return logits
         
     def base2manip(self, state):
