@@ -19,6 +19,8 @@ except:
 '''
 Oracle Wrapper, callable in the AL pipeline, with key methods
 '''
+# Exactly the same remarks as from middle_mf to main-new-al.
+# The oracles will naturaly be adapted for multifidelity
 class Oracle:
     '''
     Generic Class for the oracle. 
@@ -112,7 +114,7 @@ class OracleBase:
 '''
 Different Oracles Implemented
 '''
-
+#Each Oracle Class (Nupack, Grid, ...) will include or instantiate several sub_oracles, one for each fidelity
 class OracleMLP(OracleBase):
     def __init__(self, config):
         super().__init__(config)
@@ -122,7 +124,7 @@ class OracleMLP(OracleBase):
         self.path_oracle_mlp = self.config.path.model_oracle_MLP
         self.device = torch.device(self.config.device)
         self.total_fidelities = self.config.env.total_fidelities
-    
+    #Initializing the first samples will generate states = (seq, fid)
     def initialize_samples_base(self):
         self.min_len = self.config.env.min_len
         self.max_len = self.config.env.max_len
@@ -144,7 +146,7 @@ class OracleMLP(OracleBase):
             full_samples += [(molecule, np.random.randint(0, self.total_fidelities))]
 
         return full_samples
-
+    # base2oracle will transform (seq, fid) -->(seq_oracle, fid) and then seq_oracle will be fed to the sub_oracle corresponding to fid
     def base2oracle(self, state):
         seq_array, fidelity = state[0], state[1]
         initial_len = len(seq_array)
@@ -166,7 +168,8 @@ class OracleMLP(OracleBase):
             oracle_input = torch.cat((oracle_input, padding), dim = 1)
         
         return (oracle_input.to(self.device)[0], fidelity)
-
+    # We call the different sub_oracles on our data. 
+    # This can be more of less complex depending on how the fidelity impacts the oracle : is it a new model (new architecture for instance), or is it just a parameter (noise) ? 
     def get_score(self, queries):
         '''
         Input : list of arrays=seqs
@@ -429,7 +432,7 @@ class OracleNupack(OracleBase):
         
 
         def apply_noise(energies, fidelities):
-            
+            #The costs of querying each oracle wil have to be defined somewhere
             dico_cost = {
                 0 : 1,
                 1 : 1.2,
