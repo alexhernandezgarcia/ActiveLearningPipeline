@@ -259,6 +259,8 @@ In the child Classes, the previous abstract methods can be overwritten. In what 
 - the Network is precised
 - The conversion format is given for its input
 '''
+# The only difference is that the proxy models are different, more complex to take as input the fidelity
+# It does not even appear in ProxyMLP, but rather in the model_class that is loaded, and the preprocessing function (base2proxy, replaced by preprocess in each model_class)
 class ProxyMLP(ProxyBase):
     def __init__(self, config, logger, init_model = False):
         super().__init__(config, logger)
@@ -357,6 +359,8 @@ class BuildDataset:
 
 
         #Samples of training
+        #base2proxy : the inputs loaded from the data scored by the oracle are not converted here
+        #They are converted to the input format of the proxy in the preprocessing function in each model_class
         samples = list(map(self.proxy.base2proxy, dataset["samples"]))
         self.samples = np.array(samples)
 
