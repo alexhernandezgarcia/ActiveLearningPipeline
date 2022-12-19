@@ -4,7 +4,8 @@ import torch.nn.functional as F
 from abc import abstractmethod
 import numpy as np
 #for MES
-from botorch.acquisition.max_value_entropy_search import qMultiFidelityMaxValueEntropy
+# from botorch.acquisition.max_value_entropy_search import qMultiFidelityMaxValueEntropy
+from mes import qMultiFidelityMaxValueEntropy
 from botorch.models.model import Model
 from botorch.posteriors.posterior import Posterior
 from botorch.acquisition.cost_aware import CostAwareUtility 
@@ -187,7 +188,7 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
         #turn into single tensor
         candidates = torch.stack(candidates)
         candidates = candidates.view(len(samples), 1, -1).to(self.device)
-
+        # (100, 1, 108)
         return candidates
     
     def make_cost_utility(self):
@@ -200,7 +201,7 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
         #create the model
         model = self.make_botorch_model()
         #make candidate set
-        candidates = self.make_candidate_set()
+        candidates = self.make_candidate_set() #(100, 1, 108)
         #we have the project method
         projection = self.project_max_fidelity
         #we load the weights : right now discrete fidelities 
@@ -213,8 +214,12 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
             model = model, 
             candidate_set = candidates, 
             cost_aware_utility = cost_utility,
-            project = projection
+            project = projection, 
+            num_fantasies=1
             )
+        """
+        MES.posterior_max_values.shape = (10, 1) where 10 = num_max_samples (input arg, default 10)
+        """
    
         acq_values = MES(inputs_af)
         
@@ -352,9 +357,7 @@ class ProxyBotorch(Model):
         with torch.no_grad():
             outputs = torch.hstack([self.proxy.model(X) for _ in range(self.nb_samples)]).cpu().detach().numpy() #outputs = (100, 20, 1)
             mean_1 = np.mean(outputs, axis = 1) #mean_1 = (100, 1)
-            #print("mean_1", mean_1)
-            var_1 = np.var(outputs, axis = 1) #var_1 = (100, 1)
-            #print("std_1", std_1)
+            var_1 = np.var(outputs, axis = 1, ddof=0) #var_1 = (100, 1)
         #For the mean
 
         # outputs_4dim = (6, 20, 2, 1)
@@ -363,35 +366,68 @@ class ProxyBotorch(Model):
         mean = torch.from_numpy(mean_1)
         #For the variance
         list_var = torch.from_numpy(var_1)
-        # mean and list_var are just rounded off values of the mean and variance
-        # list_var.shape=(100, 1)
+        """
+        mean and list_var are just rounded off values of the mean and variance
+        list_var.shape=(100, 1)
+        """
         nb_inputs = list_var.shape[0] #100
         nb_cofid = list_var.shape[1] #1
-        # nb_cofid = 1
+        if nb_cofid == 1:
+            list_covar = [torch.diag(list_var[i, ...].view(nb_cofid)) for i in range(nb_inputs)] #list of 100 tensors
+        else:
+            list_covar = [torch.Tensor(np.cov(outputs[i].squeeze(-1), rowvar=False, ddof=0)) for i in range(nb_inputs)]
+        covar= torch.stack(list_covar, 0)   #(100, 1, 1) if dim_input = 3
+        if dim_input == 3:
+            mean = mean.unsqueeze(1)
+            covar = covar.unsqueeze(1)
 
-        # BEGIN COMMENT
-        list_covar = [torch.diag(list_var[i, ...].view(nb_cofid)) for i in range(nb_inputs)] #list of 100 tensors
-        covar= torch.stack(list_covar, 0)   
-        # # import pdb
-        # if dim_input == 3:
-        #     mean = mean.unsqueeze(1)
-            # covar = covar.unsqueeze(1)
+        """
+        if dim_input =3
+            Bao with the unsqueezing
+            mean.shape = (100, 1, 1)
+            covar.shape = (100, 1, 1, 1)        
+        """
 
-        # if dim_input == 4:
-        #     #mean = mean.view(mean.shape[0], mean.shape[2], mean.shape[1])
-        #     #pdb.set_trace()
-        #     mean = mean.unsqueeze(1).squeeze(-1)
-        #     #import pdb; pdb.set_trace()
-        #     covar = covar.unsqueeze(1) 
-        #print("mean input to mvn", mean.shape, "covar", covar.shape)
-        # END COMMENT
-        # list_var = list_var.squeeze()
-        # covar = torch.diag(list_var)
-        # covar = torch.unsqueeze(covar, -1)
-        #  mean = (100, 1, 1) covar.shape=(100, 1, 1)
+        if dim_input == 4:
+            mean = mean.unsqueeze(1).squeeze(-1)
+            covar = covar.unsqueeze(1) 
+        """
+        for class MultivariateNormal
+            :param mean: `... x N` mean of mvn distribution.
+            :param covariance_matrix: `... x N X N` covariance matrix of mvn distribution.
+        """
         mvn = MultivariateNormal(mean = mean.to(self.device), covariance_matrix = covar.to(self.device))
         posterior = GPyTorchPosterior(mvn)
-        
+        """
+        if dim_input == 3: 
+            Bao code 
+                posterior.mean.shape = (100, 1, 1, 1)
+                posterior.var.shape = (100, 1, 1, 1)
+            but
+                in sample_max_value_gumbel
+                   (expected mu.shape) = (expected sigma.shape) = n x 1, where n is is batch size of candidate (as called with candidate when n =3)
+                   it is necessary for num_fantasies = mu.shape[1] = mu.shape[-1], i.e., only last dimension should be the second dimension, should be num_fanatasies
+                   But when I tried both dimensions, and fed the input to sample_max_Gumbel with two different dims, it still worked
+            In case we do not perform unsqueezing 
+                mean.shape = (100, 1)
+                covar.shape = (100, 1, 1)
+                posterior.mean.shape = (100, 1, 1)
+                posterior.variance.shape = (100, 1, 1)
+                But this is a problem because it satisfies the len(mu.shape) ==3 condition in gumbel approximation
+                And then a transpose of the matrix is taken --> result is 1 x 1-- x1 which is undesirable
+            If we do:
+                mean.shape = (100)
+                covar.shape = (100, 1, 1)
+            then:
+                then posterior.mean.shape = (100, 100, 1)
+                posterior.variance.shape = (100, 100, 1)
+        if dim_input == 4:
+            mean.shape = torch.Size([9, 1, 2])
+            covar.shape = torch.Size([9, 1, 2, 2])
+            posterior.mean.shape = torch.Size([9, 1, 2, 1])
+            posterior.variance.shape = torch.Size([9, 1, 2, 1])
+            posterior.mvn.covariance.shape = torch.Size([9, 1, 2, 2])
+        """
         return posterior
     
     @property
