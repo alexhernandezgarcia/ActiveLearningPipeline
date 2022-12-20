@@ -516,8 +516,8 @@ class MLP(nn.Module):
         self.transformerCall = transformerCall
 
         if self.transformerCall == False:
-            self.hidden_layers = [1024, 1024, 1024, 1024, 1024]
-            self.dropout_prob = 0.0
+            self.hidden_layers = [8, 8]
+            self.dropout_prob = 0.3
         else:
             self.hidden_layers = hidden_layers
             self.dropout_prob = dropout_prob
