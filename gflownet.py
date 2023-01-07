@@ -505,8 +505,9 @@ class GFlowNet:
         q_out = torch.logsumexp(q_out, 1)
 
         child_Qsa = q_out * (1 - done) - self.loginf * done
-
-        out_flow = torch.logaddexp(torch.log(rewards + self.flowmatch_eps), child_Qsa)
+        reward = torch.log(rewards + self.flowmatch_eps)
+        # print(reward)
+        out_flow = torch.logaddexp(reward, child_Qsa)
 
         # LOSS
         loss = (in_flow - out_flow).pow(2).mean()

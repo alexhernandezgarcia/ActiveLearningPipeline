@@ -422,7 +422,7 @@ class OracleGridCorners(OracleBase):
         for i in range(self.init_len):
             samples.extend(
                 # length-1
-                rng.integers(low=0, high=self.length, size=(1,) + (self.n_dim,))
+                rng.integers(low=0, high=self.length-1, size=(1,) + (self.n_dim,))
             )
         # convert to list as all other oracles return a list
         return samples

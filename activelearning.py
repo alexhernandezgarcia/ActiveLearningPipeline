@@ -107,7 +107,7 @@ class GflownetAgent:
 
 if __name__ == "__main__":
     # TODO : activelearning pipeline as a simple function, without the class ?
-    config_test_name = "config_test.yaml"
+    config_test_name = "/home/mila/n/nikita.saxena/ActiveLearningPipeline/al_d2l3_gridconfig.yaml"
     config = OmegaConf.load(config_test_name)
     if config.al.mode == True:
         al = ActiveLearning(config=config)

@@ -284,6 +284,8 @@ class ProxyBotorchUCB(Model):
              outputs = torch.hstack([self.proxy.model(X, None, None) for _ in range(self.nb_samples)])
         mean = torch.mean(outputs, axis=1).unsqueeze(-1)
         var = torch.var(outputs, axis=1).unsqueeze(-1)
+        # if var is an array of zeros then we add a small value to it
+        var = torch.where(var == 0, torch.ones_like(var) * 1e-4, var)
 
         covar = [torch.diag(var[i]) for i in range(X.shape[0])]
         covar = torch.stack(covar, axis = 0)
@@ -327,7 +329,7 @@ class AcquisitionFunctionBotorchUCB(AcquisitionFunctionBase):
         UCB = qUpperConfidenceBound(
             model = model, beta = 0.1, sampler = sampler)
         acq_values = UCB(inputs_af)
-        print(acq_values)
+        # print(acq_values)
         return acq_values
         
 class AcquisitionFunctionMES(AcquisitionFunctionBase):
@@ -369,6 +371,8 @@ class AcquisitionFunctionMES(AcquisitionFunctionBase):
             candidate_set = candidates)
    
         acq_values = MES(inputs_af)
-        print(acq_values)
+        if model.proxy.logger:
+            model.proxy.logger.log_metric("MES", torch.mean(acq_values).cpu().numpy())
+        # print(acq_values)
         return acq_values
     
